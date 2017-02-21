@@ -17,6 +17,7 @@ library(data.table)
 library(ggplot2)
 library(readxl)
 library(markdown)
+library(curl)
 
 # from https://github.com/davesteps/machLearn/blob/master/init.R
 label.help <- function(label,id){
