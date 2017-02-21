@@ -7,9 +7,18 @@
 #    http://shiny.rstudio.com/
 #
 
-library(shiny) ; library(data.table) ; library(ggplot2) ; library(readxl) ; library(datasets)
-library(shinyjs) ; library(magrittr) ; library(DT)
+library(shiny)
+library(shinyjs)
+library(magrittr)
+library(DT)
+library(shinydashboard)
+library(shinyBS)
+library(data.table)
+library(ggplot2)
+library(readxl)
+library(markdown)
 
+# from https://github.com/davesteps/machLearn/blob/master/init.R
 label.help <- function(label,id){
   HTML(paste0(label,actionLink(id,label=NULL,icon=icon('question-circle'))))
 }

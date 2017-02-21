@@ -7,30 +7,6 @@
 #    http://shiny.rstudio.com/
 #
 
-library(shiny) ; library(shinydashboard) ; library(shinyBS) ; library(data.table) ; library(ggplot2) ; library(readxl)
-library(shinyjs)
-
-appCSS <- "
-#loading-content {
-position: absolute;
-background: #000000;
-opacity: 0.9;
-z-index: 100;
-left: 0;
-right: 0;
-height: 100%;
-text-align: center;
-color: #FFFFFF;
-}
-"
-
-# from https://github.com/davesteps/machLearn/blob/master/init.R
-label.help <- function(label,id){
-  HTML(paste0(label,actionLink(id,label=NULL,icon=icon('question-circle'))))
-}
-
-
-
 dashboardPage(
   dashboardHeader(title = "P2M2 - Analyses ciblées",
                   dropdownMenu(type = "messages",
