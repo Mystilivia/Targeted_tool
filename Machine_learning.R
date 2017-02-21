@@ -38,7 +38,6 @@ server <- function(input, output,session) {
       updateSelectizeInput(session,'slt_algo',choices = reg.mdls,selected = reg.mdls)
     } else {
       updateSelectizeInput(session,'slt_algo',choices = cls.mdls,selected = cls.mdls)
-      
     }
   })
   

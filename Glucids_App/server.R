@@ -35,7 +35,7 @@ shinyServer(function(input, output, session) {
   
   #### Importation des données [OK]
   file_input_sheets <- reactive({
-    validate(need(!is.null(input$file_input), ""))
+    validate(need(!is.null(input$file_input), "Aucun fichier compatible chargé"))
     data <- input$file_input
     if (is.null(data)) {return(NULL)}
     file.rename(data$datapath, paste0(data$datapath, '.xlsx'))
@@ -46,16 +46,16 @@ shinyServer(function(input, output, session) {
   ## Choix des onglets [OK]
   output$select_sheets <- renderUI({
     sheets_list <- file_input_sheets()
-    if(is.null(sheets_list)) {return(NULL)}
-    if(length(sheets_list) < 3) {return(p("Le fichier excel doit avoir au moins 3 onglets (vous pouvez télécharger un exemple dans l'onglet Démonstration)."))}
+    if(is.null(sheets_list)) {return(p("Aucune feuille de calcul détectée"))}
+    if(length(sheets_list) < 3) {return(p("Le fichier excel doit avoir au moins 3 feuilles de calculs (voir Description)."))}
     return(
       list(
-        selectInput('sheet_datamatrix', label = label.help('Données', 'sheet_datamatrix_help'), sheets_list, selected = 1),
-        bsTooltip('sheet_datamatrix_help', title = 'Feuilles de calcul comprenant les données des variables pour chaque échantillon', placement = 'right', trigger = 'hover'),
-        selectInput('sheet_samples', label = label.help('Echantillons', 'sheet_samples_help'), sheets_list, selected = 2),
-        bsTooltip('sheet_samples_help', title = '', placement = 'right', trigger = 'hover'),
-        selectInput('sheet_variables', label = label.help('Variables', 'sheet_variables_help'), sheets_list, selected = 3),
-        bsTooltip('sheet_variables_help', title = 'Feuilles de calcul comprenant les données des variables pour chaque échantillon', placement = 'right', trigger = 'hover')
+        selectInput('sheet_datamatrix', label = label.help('(1) Données', 'sheet_datamatrix_help'), sheets_list, selected = 1),
+        bsTooltip('sheet_datamatrix_help', title = 'Feuille de calcul comprenant les données des variables pour chaque échantillon', placement = 'right', trigger = 'hover'),
+        selectInput('sheet_samples', label = label.help('(2) Echantillons', 'sheet_samples_help'), sheets_list, selected = 2),
+        bsTooltip('sheet_samples_help', title = 'Feuille de calcul comprenant la description des échantillons avec au moins la colonne "class"', placement = 'right', trigger = 'hover'),
+        selectInput('sheet_variables', label = label.help('(3) Variables', 'sheet_variables_help'), sheets_list, selected = 3),
+        bsTooltip('sheet_variables_help', title = 'Feuille de calcul comprenant la liste des variables avec une colonne "class" et "conc"', placement = 'right', trigger = 'hover')
       )
     )
   }) 
@@ -66,11 +66,11 @@ shinyServer(function(input, output, session) {
     if (data == 'Aucun') {return(NULL)}
     if (data == 'Glucides (GC-FID)') {return(data.exemple1)}
     if (data == 'Acides aminés (UPLC-DAD)') {return(data.exemple2)}
-    if (data == 'Importer un fichier') {
+    if (data == 'Importer un fichier' & !is.null(input$file_input)) {
       validate(
-        need(input$sheet_datamatrix, "Choisir un feuillet Données"),
-        need(input$sheet_samples, "Choisir le feuillet Echantillons"),
-        need(input$sheet_variables, "Choisir le feuillet Variables")
+        need(input$sheet_datamatrix, "Importer un fichier"),
+        need(input$sheet_samples, ""),
+        need(input$sheet_variables, "")
       )
       data <- input$file_input
       if (!is.null(data)) {
@@ -96,61 +96,52 @@ shinyServer(function(input, output, session) {
   #### Status check and ui generation [OK]
   output$progress_box <- renderUI({
     data <- dataset()
-    status <- as.list(rep("primary", 5))
+    status <- as.list(rep("primary", 7))
+    
     status[[1]] <- ifelse(is.null(data), "warning", "success")
-    if (status[[1]] == "success") {
-      if(any(duplicated(data[[1]][1])) == TRUE | any(duplicated(data[[2]][1])) == TRUE) { status[[2]] <- "danger"} else {status[[2]] <- "success"}}
-    if (status[[1]] == "success") {
-      if(any(duplicated(names(data[[1]]))) == TRUE | any(duplicated(data[[3]][[1]])) == TRUE) { status[[3]] <- "danger"} else {status[[3]] <- "success"}}
-    if (status[[1]] == "success") {
-      if(!identical(data[[1]][,1], data[[2]][,1])) {status[[4]] <- "danger"} else {status[[4]] <- "success"}}
-    if (status[[1]] == "success") {
-      if(!identical(names(data[[1]])[-1], data[[3]][[1]])) { status[[5]] <- "danger"} else {status[[5]] <- "success"}}
+    if (status[[1]] == "success") {status[[1]] == "success"
+      status[[2]] <- ifelse(any(duplicated(data[[1]][1]) | duplicated(data[[2]][1])) == TRUE, "danger", "success")
+      status[[3]] <- ifelse(any(duplicated(names(data[[1]]))) == TRUE | any(duplicated(data[[3]][[1]])) == TRUE, "danger", "success")
+      status[[4]] <- ifelse(!identical(data[[1]][,1], data[[2]][,1]), "danger", "success")
+      status[[5]] <- ifelse(!identical(names(data[[1]])[-1], data[[3]][[1]]), "danger", "success")
+      status[[6]] <- ifelse(!'class' %in% names(data[[2]]), "danger", "success")
+      status[[7]] <- ifelse(!'class' %in% names(data[[3]]), "danger", ifelse(!'SI' %in% data[[3]][,class], "danger", "success"))
+    }
+    
     list(
       box(width = 12, height = 40, solidHeader = T, title = 'Import', status = status[[1]]),
       box(width = 12, height = 40, solidHeader = T, title = 'Duplicats échantillons', status = status[[2]]),
       box(width = 12, height = 40, solidHeader = T, title = 'Duplicats variables', status =  status[[3]]),
       box(width = 12, height = 40, solidHeader = T, title = 'lignes (1) = lignes (2)', status =  status[[4]]),
-      box(width = 12, height = 40, solidHeader = T, title = 'colonnes (1) = lignes (3)', status =  status[[5]])
+      box(width = 12, height = 40, solidHeader = T, title = 'colonnes (1) = lignes (3)', status =  status[[5]]),
+      box(width = 12, height = 40, solidHeader = T, title = 'colonne "class" dans (2)', status =  status[[6]]),
+      box(width = 12, height = 40, solidHeader = T, title = 'colonne "class" avec SI dans (3)', status =  status[[7]])
     )
-  })
-  
-  #### InfoBox
-  output$Echantillons <- renderInfoBox({
-    data <- dataset()
-    temp.val <- ifelse(is.null(data), 0, nrow(data[[1]]))
-    infoBox("Echantillons", icon = icon(name = 'list-ul'),
-            value = temp.val, subtitle = paste0(paste(unlist(data[[1]][1,1]), collapse = ", "), " [...] ", paste(unlist(data[[1]][.N, 1]), collapse = ", ")))
-  })
-  output$Descripteurs <- renderInfoBox({
-    data <- dataset()
-    temp.val <- ifelse(is.null(data), 0, dim(data[[2]])[2])
-    infoBox("Descripteurs", icon = icon(name = 'info'),
-            value = temp.val, subtitle = paste0(paste(unlist(names(data[[2]])[-1][1]), collapse = ", "), " [...] ", paste(unlist(names(data[[2]])[-1][length(names(data[[2]])[-1])]), collapse = ", ")))
-  })
-  output$Variables <- renderInfoBox({
-    data <- dataset()
-    temp.val <- ifelse(is.null(data), 0, dim(data[[3]])[1])
-    infoBox("Variables", icon = icon(name = 'bar-chart'),
-            value = temp.val, subtitle = paste0(paste(unlist(data[[3]][1,1]), collapse = ", "), " [...] ", paste(unlist(data[[3]][.N, 1]), collapse = ", ")))
   })
   
   #### Sidebar information
   output$sidebar_info <- renderUI({
     data <- dataset()
-    if (is.null(data)) {return(NULL)}
-    Batches <- ifelse(any(names(data[[2]]) == "batch") == FALSE, 1,   length(unique(data[[2]][,batch])))
-    Samples <- ifelse(any(names(data[[2]]) == "class") == FALSE, 0,   length(unique(data[[2]][,batch])))
-    Standards <- ifelse(any(names(data[[2]]) == "class") == FALSE, 0, unlist(data[[2]][class == "standard"]))
-    SI <- ifelse(any(names(data[[3]]) == "class") == FALSE, 0,        unlist(data[[3]][class == "SI", 1])))
+    sidebar_info_val <- as.list(rep(0, 6))
+    
+    if (!is.null(data)) {
+      sidebar_info_val[[1]] <- dim(data[[1]])[1]
+      sidebar_info_val[[2]] <- dim(data[[3]])[1]
+      sidebar_info_val[[3]] <- ifelse(any(names(data[[2]]) == "batch") == FALSE, 1, length(unique(data[[2]][,batch])))
+      sidebar_info_val[[4]] <- ifelse(any(names(data[[2]]) == "class") == FALSE, 0, data[[2]][class == "sample", .N])
+      sidebar_info_val[[5]] <- ifelse(any(names(data[[2]]) == "class") == FALSE, 0, data[[2]][class == "standard", .N])
+      sidebar_info_val[[6]] <- ifelse(any(names(data[[3]]) == "class") == FALSE, 0, 
+                                      ifelse(!'SI' %in% data[[3]][,class], 0, as.character(data[[3]][class == "SI", 1])))
+    }
+    
     return(
       list(
-        p(paste0("Echantillons (total) : ", dim(data[[1]])[1])),
-        p(paste0("Variables : ", dim(data[[3]])[1])),
-        p(paste0("Batchs : ", Batches)),
-        p(paste0("Echantillons : ", Samples)),
-        p(paste0("Standards externes : ", Standards)),
-        p(paste0("Standard Interne : ", SI))
+        p(paste0("Echantillons (total) : ", sidebar_info_val[[1]])),
+        p(paste0("Variables : ", sidebar_info_val[[2]])),
+        p(paste0("Batchs : ", sidebar_info_val[[3]])),
+        p(paste0("Echantillons : ", sidebar_info_val[[4]])),
+        p(paste0("Standards externes : ", sidebar_info_val[[5]])),
+        p(paste0("Standard Interne : ", sidebar_info_val[[6]]))
       )
     )
   })

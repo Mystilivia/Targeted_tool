@@ -50,10 +50,10 @@ dashboardPage(
 
   dashboardSidebar(
     sidebarMenu(
-      menuItem("Données",     tabName = "data",       icon = icon('database'), badgeLabel = "In test", badgeColor = "blue", selected = T),
-      menuItem("Calculs",     tabName = "calculs",    icon = icon('tasks'), badgeLabel = "In progress", badgeColor = "orange"),
-      menuItem("Corrections", tabName = "correction", icon = icon('check-square-o'), badgeLabel = "In project", badgeColor = "red"),
-      menuItem("Analyses",    tabName = "analysis",   icon = icon('bar-chart'), badgeLabel = "In project", badgeColor = "red")
+      menuItem("1 - Données",     tabName = "data",       icon = icon('database'), badgeLabel = "In test", badgeColor = "blue", selected = T),
+      menuItem("2 - Calculs",     tabName = "calculs",    icon = icon('tasks'), badgeLabel = "In progress", badgeColor = "orange"),
+      menuItem("3 - Corrections", tabName = "correction", icon = icon('check-square-o'), badgeLabel = "In project", badgeColor = "red"),
+      menuItem("4 - Analyses",    tabName = "analysis",   icon = icon('bar-chart'), badgeLabel = "In project", badgeColor = "red")
     ),
     hr(),
     fluidRow(
@@ -96,24 +96,19 @@ dashboardPage(
                                                                   uiOutput("select_sheets"))
                                 )
                             ),
-                            column(width = 6, uiOutput('progress_box'))
-                          ),
-                          fluidRow(
-                            infoBoxOutput("Echantillons"),
-                            infoBoxOutput("Descripteurs"),
-                            infoBoxOutput("Variables")
+                            box(width = 6, title = 'Vérification des données', solidHeader = T, status = 'primary',
+                                column(width = 12, uiOutput('progress_box'))
+                            )
                           )
                   ),
                   tabItem(tabName = "calculs",
                           h3("Calculs des concentrations")
                           
                   ),
-                  
                   tabItem(tabName = "correction",
                           h3("Appliquer une correction des données")
                           
                   ),
-                  
                   tabItem(tabName = "analysis",
                           h3("Analyses")
                   )
