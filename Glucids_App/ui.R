@@ -30,6 +30,7 @@ label.help <- function(label,id){
 }
 
 
+
 dashboardPage(
   dashboardHeader(title = "P2M2 - Analyses ciblées",
                   dropdownMenu(type = "messages",

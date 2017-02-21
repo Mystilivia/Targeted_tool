@@ -10,25 +10,17 @@
 library(shiny) ; library(data.table) ; library(ggplot2) ; library(readxl) ; library(datasets)
 library(shinyjs) ; library(magrittr) ; library(DT)
 
-#data.exemple1 <- list('datamatrix' = read_excel(path = "./Glucids_App/data/Shiny_test.xlsx", sheet = 1, na = "NA"),
-#                      'samplemetadata' = read_excel(path = "./Glucids_App/data/Shiny_test.xlsx", sheet = 2, na = "NA"),
-#                      'variablemetadata' = read_excel(path = "./Glucids_App/data/Shiny_test.xlsx", sheet = 3, na = "NA"))
-#data.exemple1 <- lapply(data.exemple1, as.data.table)
-
 label.help <- function(label,id){
   HTML(paste0(label,actionLink(id,label=NULL,icon=icon('question-circle'))))
 }
 
-data.exemple1 <- list('datamatrix' = read_excel(path = "data/Shiny_test.xlsx", sheet = 1, na = "NA"),
-                      'samplemetadata' = read_excel(path = "data/Shiny_test.xlsx", sheet = 2, na = "NA"),
-                      'variablemetadata' = read_excel(path = "data/Shiny_test.xlsx", sheet = 3, na = "NA"))
-data.exemple1 <- lapply(data.exemple1, as.data.table)
+data.exemple1 <- list('datamatrix' = fread('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfSUJVZTczWm9fUmM'),
+                      'samplemetadata' = fread('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfNlN1cVZzYzh6aFk'),
+                      'variablemetadata' = fread('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfTlB3eUJwNXE0Szg'))
 
-data.exemple2 <- list('datamatrix' = read_excel(path = "data/Shiny_test.xlsx", sheet = 1, na = "NA"),
-                      'samplemetadata' = read_excel(path = "data/Shiny_test.xlsx", sheet = 2, na = "NA"),
-                      'variablemetadata' = read_excel(path = "data/Shiny_test.xlsx", sheet = 3, na = "NA"))
-data.exemple2 <- lapply(data.exemple1, as.data.table)
-
+data.exemple2 <- list('datamatrix' = fread('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfbkRzcGtQYTZGc00'),
+                      'samplemetadata' = fread('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfcWdoNWlid2d2WHc'),
+                      'variablemetadata' = fread('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfbi0zZ0txM2daQ1U'))
 
 # Define server logic required to draw a histogram
 shinyServer(function(input, output, session) {
@@ -60,6 +52,8 @@ shinyServer(function(input, output, session) {
     )
   }) 
   
+  
+  
   ## choix du jeux de donnée (exemple ou personnalisé) [OK]
   dataset <- reactive({
     data <- input$dataset
@@ -86,11 +80,11 @@ shinyServer(function(input, output, session) {
   #### Demonstration data download [OK]
   output$download_exemple1 <- downloadHandler(
     filename = 'Demo_Glucids.xlsx',
-    content = function(file) {file.copy('data/Glucids_vf.xlsx', file)}
+    content = function(file) {download.file('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfVmxtMm1kbG1hRzA', file, mode = 'wb')}
   )
   output$download_exemple2 <- downloadHandler(
     filename = 'Demo_Amino_acids.xlsx',
-    content = function(file) {file.copy('data/Aminoacids_vf.xlsx', file)}
+    content = function(file) {download.file('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfMmJjOHlKR3ZXOVk', file, mode = 'wb')}
   )
   
   #### Status check and ui generation [OK]
