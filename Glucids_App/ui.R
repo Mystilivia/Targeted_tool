@@ -6,6 +6,16 @@
 # 
 #    http://shiny.rstudio.com/
 #
+library(shiny)
+library(shinyjs)
+library(magrittr)
+library(DT)
+library(shinydashboard)
+library(shinyBS)
+library(data.table)
+library(ggplot2)
+library(readxl)
+library(markdown)
 
 dashboardPage(
   dashboardHeader(title = "P2M2 - Analyses ciblées",
