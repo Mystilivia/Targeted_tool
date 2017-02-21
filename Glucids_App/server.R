@@ -1,0 +1,169 @@
+#
+# This is the server logic of a Shiny web application. You can run the 
+# application by clicking 'Run App' above.
+#
+# Find out more about building applications with Shiny here:
+# 
+#    http://shiny.rstudio.com/
+#
+
+library(shiny) ; library(data.table) ; library(ggplot2) ; library(readxl) ; library(datasets)
+library(shinyjs) ; library(magrittr) ; library(DT)
+
+#data.exemple1 <- list('datamatrix' = read_excel(path = "./Glucids_App/data/Shiny_test.xlsx", sheet = 1, na = "NA"),
+#                      'samplemetadata' = read_excel(path = "./Glucids_App/data/Shiny_test.xlsx", sheet = 2, na = "NA"),
+#                      'variablemetadata' = read_excel(path = "./Glucids_App/data/Shiny_test.xlsx", sheet = 3, na = "NA"))
+#data.exemple1 <- lapply(data.exemple1, as.data.table)
+
+label.help <- function(label,id){
+  HTML(paste0(label,actionLink(id,label=NULL,icon=icon('question-circle'))))
+}
+
+data.exemple1 <- list('datamatrix' = read_excel(path = "data/Shiny_test.xlsx", sheet = 1, na = "NA"),
+                      'samplemetadata' = read_excel(path = "data/Shiny_test.xlsx", sheet = 2, na = "NA"),
+                      'variablemetadata' = read_excel(path = "data/Shiny_test.xlsx", sheet = 3, na = "NA"))
+data.exemple1 <- lapply(data.exemple1, as.data.table)
+
+data.exemple2 <- list('datamatrix' = read_excel(path = "data/Shiny_test.xlsx", sheet = 1, na = "NA"),
+                      'samplemetadata' = read_excel(path = "data/Shiny_test.xlsx", sheet = 2, na = "NA"),
+                      'variablemetadata' = read_excel(path = "data/Shiny_test.xlsx", sheet = 3, na = "NA"))
+data.exemple2 <- lapply(data.exemple1, as.data.table)
+
+
+# Define server logic required to draw a histogram
+shinyServer(function(input, output, session) {
+  
+  #### Importation des données [OK]
+  file_input_sheets <- reactive({
+    validate(need(!is.null(input$file_input), ""))
+    data <- input$file_input
+    if (is.null(data)) {return(NULL)}
+    file.rename(data$datapath, paste0(data$datapath, '.xlsx'))
+    temp <- readxl::excel_sheets(paste0(data$datapath, '.xlsx'))
+    return(setNames(as.list(1:length(temp)), temp))
+  })
+  
+  ## Choix des onglets [OK]
+  output$select_sheets <- renderUI({
+    sheets_list <- file_input_sheets()
+    if(is.null(sheets_list)) {return(NULL)}
+    if(length(sheets_list) < 3) {return(p("Le fichier excel doit avoir au moins 3 onglets (vous pouvez télécharger un exemple dans l'onglet Démonstration)."))}
+    return(
+      list(
+        selectInput('sheet_datamatrix', label = label.help('Données', 'sheet_datamatrix_help'), sheets_list, selected = 1),
+        bsTooltip('sheet_datamatrix_help', title = 'Feuilles de calcul comprenant les données des variables pour chaque échantillon', placement = 'right', trigger = 'hover'),
+        selectInput('sheet_samples', label = label.help('Echantillons', 'sheet_samples_help'), sheets_list, selected = 2),
+        bsTooltip('sheet_samples_help', title = '', placement = 'right', trigger = 'hover'),
+        selectInput('sheet_variables', label = label.help('Variables', 'sheet_variables_help'), sheets_list, selected = 3),
+        bsTooltip('sheet_variables_help', title = 'Feuilles de calcul comprenant les données des variables pour chaque échantillon', placement = 'right', trigger = 'hover')
+      )
+    )
+  }) 
+  
+  ## choix du jeux de donnée (exemple ou personnalisé) [OK]
+  dataset <- reactive({
+    data <- input$dataset
+    if (data == 'Aucun') {return(NULL)}
+    if (data == 'Glucides (GC-FID)') {return(data.exemple1)}
+    if (data == 'Acides aminés (UPLC-DAD)') {return(data.exemple2)}
+    if (data == 'Importer un fichier') {
+      validate(
+        need(input$sheet_datamatrix, "Choisir un feuillet Données"),
+        need(input$sheet_samples, "Choisir le feuillet Echantillons"),
+        need(input$sheet_variables, "Choisir le feuillet Variables")
+      )
+      data <- input$file_input
+      if (!is.null(data)) {
+        file.rename(data$datapath, paste0(data$datapath, '.xlsx'))
+        return(list("datamatrix" = as.data.table(readxl::read_excel(paste0(data$datapath, '.xlsx'), sheet = as.numeric(input$sheet_datamatrix))),
+                    "samplemetadata" = as.data.table(readxl::read_excel(paste0(data$datapath, '.xlsx'), sheet = as.numeric(input$sheet_samples))),
+                    "variablemetadata" = as.data.table(readxl::read_excel(paste0(data$datapath, '.xlsx'), sheet = as.numeric(input$sheet_variables)))
+        ))
+      } else {return(NULL)}
+    } else {return(NULL)}
+  })
+  
+  #### Demonstration data download [OK]
+  output$download_exemple1 <- downloadHandler(
+    filename = 'Demo_Glucids.xlsx',
+    content = function(file) {file.copy('data/Glucids_vf.xlsx', file)}
+  )
+  output$download_exemple2 <- downloadHandler(
+    filename = 'Demo_Amino_acids.xlsx',
+    content = function(file) {file.copy('data/Aminoacids_vf.xlsx', file)}
+  )
+  
+  #### Status check and ui generation [OK]
+  output$progress_box <- renderUI({
+    data <- dataset()
+    status <- as.list(rep("primary", 5))
+    status[[1]] <- ifelse(is.null(data), "warning", "success")
+    if (status[[1]] == "success") {
+      if(any(duplicated(data[[1]][1])) == TRUE | any(duplicated(data[[2]][1])) == TRUE) { status[[2]] <- "danger"} else {status[[2]] <- "success"}}
+    if (status[[1]] == "success") {
+      if(any(duplicated(names(data[[1]]))) == TRUE | any(duplicated(data[[3]][[1]])) == TRUE) { status[[3]] <- "danger"} else {status[[3]] <- "success"}}
+    if (status[[1]] == "success") {
+      if(!identical(data[[1]][,1], data[[2]][,1])) {status[[4]] <- "danger"} else {status[[4]] <- "success"}}
+    if (status[[1]] == "success") {
+      if(!identical(names(data[[1]])[-1], data[[3]][[1]])) { status[[5]] <- "danger"} else {status[[5]] <- "success"}}
+    list(
+      box(width = 12, height = 40, solidHeader = T, title = 'Import', status = status[[1]]),
+      box(width = 12, height = 40, solidHeader = T, title = 'Duplicats échantillons', status = status[[2]]),
+      box(width = 12, height = 40, solidHeader = T, title = 'Duplicats variables', status =  status[[3]]),
+      box(width = 12, height = 40, solidHeader = T, title = 'lignes (1) = lignes (2)', status =  status[[4]]),
+      box(width = 12, height = 40, solidHeader = T, title = 'colonnes (1) = lignes (3)', status =  status[[5]])
+    )
+  })
+  
+  #### InfoBox
+  output$Echantillons <- renderInfoBox({
+    data <- dataset()
+    temp.val <- ifelse(is.null(data), 0, nrow(data[[1]]))
+    infoBox("Echantillons", icon = icon(name = 'list-ul'),
+            value = temp.val, subtitle = paste0(paste(unlist(data[[1]][1,1]), collapse = ", "), " [...] ", paste(unlist(data[[1]][.N, 1]), collapse = ", ")))
+  })
+  output$Descripteurs <- renderInfoBox({
+    data <- dataset()
+    temp.val <- ifelse(is.null(data), 0, dim(data[[2]])[2])
+    infoBox("Descripteurs", icon = icon(name = 'info'),
+            value = temp.val, subtitle = paste0(paste(unlist(names(data[[2]])[-1][1]), collapse = ", "), " [...] ", paste(unlist(names(data[[2]])[-1][length(names(data[[2]])[-1])]), collapse = ", ")))
+  })
+  output$Variables <- renderInfoBox({
+    data <- dataset()
+    temp.val <- ifelse(is.null(data), 0, dim(data[[3]])[1])
+    infoBox("Variables", icon = icon(name = 'bar-chart'),
+            value = temp.val, subtitle = paste0(paste(unlist(data[[3]][1,1]), collapse = ", "), " [...] ", paste(unlist(data[[3]][.N, 1]), collapse = ", ")))
+  })
+  
+  #### Sidebar information
+  output$sidebar_info <- renderUI({
+    data <- dataset()
+    if (is.null(data)) {return(NULL)}
+    Batches <- ifelse(any(names(data[[2]]) == "batch") == FALSE, 1,   length(unique(data[[2]][,batch])))
+    Samples <- ifelse(any(names(data[[2]]) == "class") == FALSE, 0,   length(unique(data[[2]][,batch])))
+    Standards <- ifelse(any(names(data[[2]]) == "class") == FALSE, 0, unlist(data[[2]][class == "standard"]))
+    SI <- ifelse(any(names(data[[3]]) == "class") == FALSE, 0,        unlist(data[[3]][class == "SI", 1])))
+    return(
+      list(
+        p(paste0("Echantillons (total) : ", dim(data[[1]])[1])),
+        p(paste0("Variables : ", dim(data[[3]])[1])),
+        p(paste0("Batchs : ", Batches)),
+        p(paste0("Echantillons : ", Samples)),
+        p(paste0("Standards externes : ", Standards)),
+        p(paste0("Standard Interne : ", SI))
+      )
+    )
+  })
+  
+  #### Afficher les tables
+  
+  
+  
+  
+  #### Loading Screen too hide after all above is loaded
+  #hide(id = "loading_screen", anim = TRUE, animType = "fade")
+  #show(id = "main_content")
+  ####
+  
+  ##########
+})
