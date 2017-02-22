@@ -3,8 +3,9 @@ title: Glucids_App
 account: sdechaumet
 server: shinyapps.io
 appId: 158028
-bundleId: 717884
+bundleId: 719597
 url: https://sdechaumet.shinyapps.io/Glucids_App/
-when: 1487617313.19193
+when: 1487712065.40904
 asMultiple: FALSE
 asStatic: FALSE
+ignoredFiles: data/Aminoacids_vf.xlsx|data/Glucids_vf.xlsx|data/Shiny_test.xlsx

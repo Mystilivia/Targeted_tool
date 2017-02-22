@@ -45,10 +45,10 @@ dashboardPage(
 
   dashboardSidebar(
     sidebarMenu(
-      menuItem("1 - Données",     tabName = "data",       icon = icon('database'), badgeLabel = "In test", badgeColor = "blue", selected = T),
-      menuItem("2 - Calculs",     tabName = "calculs",    icon = icon('tasks'), badgeLabel = "In progress", badgeColor = "orange"),
-      menuItem("3 - Corrections", tabName = "correction", icon = icon('check-square-o'), badgeLabel = "In project", badgeColor = "red"),
-      menuItem("4 - Analyses",    tabName = "analysis",   icon = icon('bar-chart'), badgeLabel = "In project", badgeColor = "red")
+      menuItem("1 - Données",     tabName = "data",       icon = icon('database'),       badgeLabel = "In test",     badgeColor = "blue", selected = T),
+      menuItem("2 - Calculs",     tabName = "calculs",    icon = icon('tasks'),          badgeLabel = "In progress", badgeColor = "orange"),
+      menuItem("3 - Corrections", tabName = "correction", icon = icon('check-square-o'), badgeLabel = "In project",  badgeColor = "red"),
+      menuItem("4 - Analyses",    tabName = "analysis",   icon = icon('bar-chart'),      badgeLabel = "In project",  badgeColor = "red")
     ),
     hr(),
     fluidRow(
@@ -77,8 +77,7 @@ dashboardPage(
                           fluidRow(
                             box(width = 6,
                                 title = 'Choix des données', solidHeader = T, status = 'primary',
-                                selectInput('dataset', label = label.help('Choisir un jeu de données', 'dataset_help'), choices = c('Aucun', 'Glucides (GC-FID)', 'Acides aminés (UPLC-DAD)', 'Importer un fichier')),
-                                bsTooltip(id = 'dataset_help', title = '', placement = 'right', trigger = 'hover'),
+                                selectInput('dataset', label = 'Choisir un jeu de données', choices = c('Aucun', 'Glucides (GC-FID)', 'Acides aminés (UPLC-DAD)', 'Importer un fichier')),
                                 conditionalPanel("input.dataset == 'Glucides (GC-FID)'",
                                                  downloadButton('download_exemple1', label = 'Télécharger')
                                 ),
