@@ -44,8 +44,12 @@ data.exemple2 <- readRDS('data/aminoacids.rds')
 # Define server logic required to draw a histogram
 shinyServer(function(input, output, session) {
   
+  data.exemple1 <- readRDS('data/glucids.rds')
+  data.exemple2 <- readRDS('data/aminoacids.rds')
+  
   #### Importation des données [OK]
   file_input_sheets <- reactive({
+    if(input$dataset != 'Importer un fichier'){return(NULL)}
     validate(need(!is.null(input$file_input), "Aucun fichier compatible chargé"))
     data <- input$file_input
     if (is.null(data)) {return(NULL)}
@@ -53,31 +57,16 @@ shinyServer(function(input, output, session) {
     temp <- readxl::excel_sheets(paste0(data$datapath, '.xlsx'))
     return(setNames(as.list(1:length(temp)), temp))
   })
-  
-  ## Choix des onglets [OK]
-  output$select_sheets <- renderUI({
-    sheets_list <- file_input_sheets()
-    if(is.null(sheets_list)) {return(p("Aucune feuille de calcul détectée"))}
-    if(length(sheets_list) < 3) {return(p("Le fichier excel doit avoir au moins 3 feuilles de calculs (voir Description)."))}
-    return(
-      list(
-        selectInput('sheet_datamatrix', label = label.help('(1) Données', 'sheet_datamatrix_help'), sheets_list, selected = 1),
-        bsTooltip('sheet_datamatrix_help', title = 'Feuille de calcul comprenant les données des variables pour chaque échantillon', placement = 'right', trigger = 'hover'),
-        selectInput('sheet_samples', label = label.help('(2) Echantillons', 'sheet_samples_help'), sheets_list, selected = 2),
-        bsTooltip('sheet_samples_help', title = 'Feuille de calcul comprenant la description des échantillons avec au moins la colonne "class"', placement = 'right', trigger = 'hover'),
-        selectInput('sheet_variables', label = label.help('(3) Variables', 'sheet_variables_help'), sheets_list, selected = 3),
-        bsTooltip('sheet_variables_help', title = 'Feuille de calcul comprenant la liste des variables avec une colonne "class" et "conc"', placement = 'right', trigger = 'hover')
-      )
-    )
-  }) 
-  
+
   ## choix du jeux de donnée (exemple ou personnalisé) [OK]
   dataset <- eventReactive(input$submit_data, {
-    data <- input$dataset
-    if (data == 'Aucun') {return(NULL)}
-    if (data == 'Glucides (GC-FID)') {return(data.exemple1)}
-    if (data == 'Acides aminés (UPLC-DAD)') {return(data.exemple2)}
-    if (data == 'Importer un fichier' & !is.null(input$file_input)) {
+    disable(id = 'submit_data')
+    on.exit(enable(id = 'submit_data'))
+    dataset_choice <- input$dataset
+    if (dataset_choice == 'Aucun') {return(NULL)}
+    if (dataset_choice == 'Glucides (GC-FID)') {return(data.exemple1)}
+    if (dataset_choice == 'Acides aminés (UPLC-DAD)') {return(data.exemple2)}
+    if (dataset_choice == 'Importer un fichier' & !is.null(input$file_input)) {
       validate(
         need(input$sheet_datamatrix, "Importer un fichier"),
         need(input$sheet_samples, ""),
@@ -94,22 +83,10 @@ shinyServer(function(input, output, session) {
     } else {return(NULL)}
   }, ignoreNULL = F)
   
-  #### Demonstration data download [OK]
-  output$download_exemple1 <- downloadHandler(
-    filename = 'Demo_Glucids.xlsx',
-    content = function(file) {download.file('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfVmxtMm1kbG1hRzA', file, mode = 'wb')}
-  )
-  output$download_exemple2 <- downloadHandler(
-    filename = 'Demo_Amino_acids.xlsx',
-    content = function(file) {download.file('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfMmJjOHlKR3ZXOVk', file, mode = 'wb')}
-  )
-  
-  #### Status check and ui generation [OK]
-  output$progress_box <- renderUI({
+  #### Check dataset [OK]
+  dataset_input_check <- reactive({
     data <- dataset()
-    
     status <- as.list(rep("primary", 7))
-    
     status[[1]] <- ifelse(is.null(data), "warning", "success")
     if (status[[1]] == "success") {status[[1]] == "success"
       status[[2]] <- ifelse(any(duplicated(data[[1]][1]) | duplicated(data[[2]][1])) == TRUE, "danger", "success")
@@ -119,7 +96,72 @@ shinyServer(function(input, output, session) {
       status[[6]] <- ifelse(!'class' %in% names(data[[2]]), "danger", "success")
       status[[7]] <- ifelse(!'class' %in% names(data[[3]]), "danger", ifelse(!'SI' %in% data[[3]][,class], "danger", "success"))
     }
-    
+    return(status)
+  })
+  
+  #### Extract info from dataset [OK]
+  dataset_input_val <- reactive({
+    data <- dataset()
+    sidebar_info_val <- as.list(rep(0, 6))
+    if (!is.null(data)) {
+      sidebar_info_val[[1]] <- dim(data[[1]])[1]
+      sidebar_info_val[[2]] <- dim(data[[3]])[1]
+      sidebar_info_val[[3]] <- ifelse(any(names(data[[2]]) == "batch") == FALSE, 1, length(unique(data[[2]][,batch])))
+      sidebar_info_val[[4]] <- ifelse(any(names(data[[2]]) == "class") == FALSE, 0, data[[2]][class == "sample", .N])
+      sidebar_info_val[[5]] <- ifelse(any(names(data[[2]]) == "class") == FALSE, 0, data[[2]][class == "standard", .N])
+      sidebar_info_val[[6]] <- ifelse(any(names(data[[3]]) == "class") == FALSE, 0, 
+                                      ifelse(!'SI' %in% data[[3]][,class], 0, as.character(data[[3]][class == "SI", 1])))
+    }
+    return(sidebar_info_val)
+  })
+  
+  #### Calculate standards CV of each variable inter & intra batchs
+  #    (only if multiple standard by batch for intra, and if multiple batch for inter)
+  #### Calculate content in samples with extraction volume, SI concentration and unit
+  
+  
+  ########### CORRECTIONS TAB ########### SI correction ; opt: inter and intra-batch normalization for each compounds using QCs or STD
+  #### Calculate SI deviation in samples (or show SI levels in barplot)
+  #### Correct SI by batch
+  
+  
+  ############ ANALYSES TAB ############
+  ## Interactive PCA
+  ## Interactive boxplot (choose one or multiple compoundand biological factor)
+  ## Propose PLSDA opt: OPLS ; VIP threshold and boxplot associated
+  
+  
+  ############################### OUTPUT ###############################
+  
+  #### Choix des onglets [OK]
+  output$select_sheets <- renderUI({
+    sheets_list <- file_input_sheets()
+    if(is.null(sheets_list)) {return(p("Aucune feuille de calcul détectée"))}
+    if(length(sheets_list) < 3) {return(p("Le fichier excel doit avoir au moins 3 feuilles de calculs (voir Description)."))}
+    return(
+      list(
+        selectInput('sheet_datamatrix', label = label.help('(1) Données', 'sheet_datamatrix_help'), sheets_list, selected = 1),
+        bsTooltip('sheet_datamatrix_help', title = 'Feuille de calcul comprenant les données des variables pour chaque échantillon', placement = 'right', trigger = 'hover'),
+        selectInput('sheet_samples', label = label.help('(2) Echantillons', 'sheet_samples_help'), sheets_list, selected = 2),
+        bsTooltip('sheet_samples_help', title = 'Feuille de calcul comprenant la description des échantillons avec au moins la colonne "class"', placement = 'right', trigger = 'hover'),
+        selectInput('sheet_variables', label = label.help('(3) Variables', 'sheet_variables_help'), sheets_list, selected = 3),
+        bsTooltip('sheet_variables_help', title = 'Feuille de calcul comprenant la liste des variables avec une colonne "class" et "conc"', placement = 'right', trigger = 'hover')
+      )
+    )
+  }) 
+  
+  #### Demonstration data download [OK]
+  output$download_exemple1 <- downloadHandler(
+    filename = 'Demo_Glucids.xlsx',
+    content = function(file) {download.file('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfVmxtMm1kbG1hRzA', file, mode = 'wb')}
+  )
+  output$download_exemple2 <- downloadHandler(
+    filename = 'Demo_Amino_acids.xlsx',
+    content = function(file) {download.file('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfMmJjOHlKR3ZXOVk', file, mode = 'wb')}
+  )
+
+  output$progress_box <- renderUI({
+    status <- dataset_input_check()
     return(list(
       box(width = 12, height = 40, solidHeader = T, title = 'Import', status = status[[1]]),
       box(width = 12, height = 40, solidHeader = T, title = 'Duplicats échantillons', status = status[[2]]),
@@ -131,21 +173,9 @@ shinyServer(function(input, output, session) {
     ))
   })
   
-  #### Sidebar information
+  #### Sidebar information [OK]
   output$sidebar_info <- renderUI({
-    data <- dataset()
-    sidebar_info_val <- as.list(rep(0, 6))
-    
-    if (!is.null(data)) {
-      sidebar_info_val[[1]] <- dim(data[[1]])[1]
-      sidebar_info_val[[2]] <- dim(data[[3]])[1]
-      sidebar_info_val[[3]] <- ifelse(any(names(data[[2]]) == "batch") == FALSE, 1, length(unique(data[[2]][,batch])))
-      sidebar_info_val[[4]] <- ifelse(any(names(data[[2]]) == "class") == FALSE, 0, data[[2]][class == "sample", .N])
-      sidebar_info_val[[5]] <- ifelse(any(names(data[[2]]) == "class") == FALSE, 0, data[[2]][class == "standard", .N])
-      sidebar_info_val[[6]] <- ifelse(any(names(data[[3]]) == "class") == FALSE, 0, 
-                                      ifelse(!'SI' %in% data[[3]][,class], 0, as.character(data[[3]][class == "SI", 1])))
-    }
-    
+    sidebar_info_val <- dataset_input_val()
     return(
       list(
         p(paste0("Echantillons (total) : ", sidebar_info_val[[1]])),
@@ -158,16 +188,5 @@ shinyServer(function(input, output, session) {
     )
   })
   
-  #### Corriger par rapport au SI
-  
-  
-  
-  
-  
-  #### Loading Screen too hide after all above is loaded
-  #hide(id = "loading_screen", anim = TRUE, animType = "fade")
-  #show(id = "main_content")
-  ####
-  
-  ##########
+####################### END #######################
 })

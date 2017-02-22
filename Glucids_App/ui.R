@@ -67,13 +67,14 @@ dashboardPage(
   
   dashboardBody(useShinyjs(),
                 tabItems(
+                  #################################################
                   tabItem(tabName = "data",
                           fluidRow(
-                            box(width = 8,
+                            box(width = 7,
                                 title = "Description", solidHeader = T, status = 'success',
                                 includeMarkdown('text/description.md')
                             ),
-                            column(width = 4,
+                            column(width = 5,
                                    box(width = 12, title = 'Exemple feuillet (1)', solidHeader = T, collapsible = T, collapsed = T, status = 'success',
                                        img(src="table_1.png", height = 120)),
                                    box(width = 12, title = 'Exemple feuillet (2)', solidHeader = T, collapsible = T, collapsed = T, status = 'success',
@@ -105,21 +106,29 @@ dashboardPage(
                             )
                           )
                   ),
+                  #################################################
                   tabItem(tabName = "calculs",
-                          box(width = 2, solidHeader = T, status = 'primary',
-                                 shiny::textInput('vol_extraction', label = "Volume d'extraction"),
-                                 shiny::textInput('conc_SI', label = "Concentration du SI dans les échantillons"),
-                                 shiny::textInput('dilution_fac', label = "Facteur de dilution")
-                                 )
-                          
+                          box(width = 3, solidHeader = T, status = 'primary',
+                              shiny::textInput('vol_extraction', label = "Volume d'extraction", value = 600),
+                              fluidRow(column(width = 6,
+                                              shiny::textInput('conc_SI', label = "Concentration du SI", value = 0.1)),
+                                       column(width = 6,
+                                              shiny::textInput('unit_SI', label = "Unité", value = "mM"))
+                              ),
+                              shiny::textInput('dilution_fac', label = "Facteur de dilution", placeholder = '1 = pas de dilution', value = 1),
+                              actionButton('submit_data_calc', 'Valider', icon = icon('check'))
+                          )
                   ),
+                  #################################################
                   tabItem(tabName = "correction",
                           h3("Appliquer une correction des données")
                           
                   ),
+                  #################################################
                   tabItem(tabName = "analysis",
                           h3("Analyses")
                   )
+                  #################################################
                 )
   )
 )
