@@ -24,6 +24,7 @@ label.help <- function(label,id){
   HTML(paste0(label,actionLink(id,label=NULL,icon=icon('question-circle'))))
 }
 
+#### Loading data from google drive [SERVER][LOCAL]
 # data.exemple1 <- list('datamatrix' = fread('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfSUJVZTczWm9fUmM'),
 #                       'samplemetadata' = fread('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfNlN1cVZzYzh6aFk'),
 #                       'variablemetadata' = fread('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfTlB3eUJwNXE0Szg'))
@@ -32,9 +33,13 @@ label.help <- function(label,id){
 #                       'samplemetadata' = fread('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfcWdoNWlid2d2WHc'),
 #                       'variablemetadata' = fread('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfbi0zZ0txM2daQ1U'))
 
+#### Loading data from local file [SERVER]
 data.exemple1 <- readRDS('data/glucids.rds')
 data.exemple2 <- readRDS('data/aminoacids.rds')
 
+#### Loading data from local file [LOCAL]
+#data.exemple1 <- readRDS('./Glucids_App/data/glucids.rds')
+#data.exemple2 <- readRDS('./Glucids_Appdata/aminoacids.rds')
 
 # Define server logic required to draw a histogram
 shinyServer(function(input, output, session) {
@@ -66,10 +71,8 @@ shinyServer(function(input, output, session) {
     )
   }) 
   
-  
-  
   ## choix du jeux de donnée (exemple ou personnalisé) [OK]
-  dataset <- reactive({
+  dataset <- eventReactive(input$submit_data, {
     data <- input$dataset
     if (data == 'Aucun') {return(NULL)}
     if (data == 'Glucides (GC-FID)') {return(data.exemple1)}
@@ -89,7 +92,7 @@ shinyServer(function(input, output, session) {
         ))
       } else {return(NULL)}
     } else {return(NULL)}
-  })
+  }, ignoreNULL = F)
   
   #### Demonstration data download [OK]
   output$download_exemple1 <- downloadHandler(
@@ -104,6 +107,7 @@ shinyServer(function(input, output, session) {
   #### Status check and ui generation [OK]
   output$progress_box <- renderUI({
     data <- dataset()
+    
     status <- as.list(rep("primary", 7))
     
     status[[1]] <- ifelse(is.null(data), "warning", "success")
@@ -116,7 +120,7 @@ shinyServer(function(input, output, session) {
       status[[7]] <- ifelse(!'class' %in% names(data[[3]]), "danger", ifelse(!'SI' %in% data[[3]][,class], "danger", "success"))
     }
     
-    list(
+    return(list(
       box(width = 12, height = 40, solidHeader = T, title = 'Import', status = status[[1]]),
       box(width = 12, height = 40, solidHeader = T, title = 'Duplicats échantillons', status = status[[2]]),
       box(width = 12, height = 40, solidHeader = T, title = 'Duplicats variables', status =  status[[3]]),
@@ -124,7 +128,7 @@ shinyServer(function(input, output, session) {
       box(width = 12, height = 40, solidHeader = T, title = 'colonnes (1) = lignes (3)', status =  status[[5]]),
       box(width = 12, height = 40, solidHeader = T, title = 'colonne "class" dans (2)', status =  status[[6]]),
       box(width = 12, height = 40, solidHeader = T, title = 'colonne "class" avec SI dans (3)', status =  status[[7]])
-    )
+    ))
   })
   
   #### Sidebar information
@@ -154,7 +158,8 @@ shinyServer(function(input, output, session) {
     )
   })
   
-  #### Afficher les tables
+  #### Corriger par rapport au SI
+  
   
   
   

@@ -69,10 +69,18 @@ dashboardPage(
                 tabItems(
                   tabItem(tabName = "data",
                           fluidRow(
-                            box(width = 12,
+                            box(width = 8,
                                 title = "Description", solidHeader = T, status = 'success',
                                 includeMarkdown('text/description.md')
-                            )
+                            ),
+                            column(width = 4,
+                                   box(width = 12, title = 'Exemple feuillet (1)', solidHeader = T, collapsible = T, collapsed = T, status = 'success',
+                                       img(src="table_1.png", height = 120)),
+                                   box(width = 12, title = 'Exemple feuillet (2)', solidHeader = T, collapsible = T, collapsed = T, status = 'success',
+                                       img(src="table_2.png", height = 120)),
+                                   box(width = 12, title = 'Exemple feuillet (3)', solidHeader = T, collapsible = T, collapsed = T, status = 'success',
+                                       img(src="table_3.png", height = 120))
+                                   )
                           ),
                           fluidRow(
                             box(width = 6,
@@ -88,7 +96,9 @@ dashboardPage(
                                                  fileInput('file_input', NULL, accept = c(".xls", ".xlsx")),
                                                  conditionalPanel("file_input_sheets > 0",
                                                                   uiOutput("select_sheets"))
-                                )
+                                ),
+                                hr(),
+                                actionButton('submit_data', 'Valider', icon = icon('check'))
                             ),
                             box(width = 6, title = 'Vérification des données', solidHeader = T, status = 'primary',
                                 column(width = 12, uiOutput('progress_box'))
@@ -96,7 +106,11 @@ dashboardPage(
                           )
                   ),
                   tabItem(tabName = "calculs",
-                          h3("Calculs des concentrations")
+                          box(width = 2, solidHeader = T, status = 'primary',
+                                 shiny::textInput('vol_extraction', label = "Volume d'extraction"),
+                                 shiny::textInput('conc_SI', label = "Concentration du SI dans les échantillons"),
+                                 shiny::textInput('dilution_fac', label = "Facteur de dilution")
+                                 )
                           
                   ),
                   tabItem(tabName = "correction",
