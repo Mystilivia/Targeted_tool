@@ -33,7 +33,6 @@ server <- function(input, output,session) {
   makeReactiveBinding('modelType')
   
   observeEvent(modelType,{
-    
     if(modelType=='Regression'){
       updateSelectizeInput(session,'slt_algo',choices = reg.mdls,selected = reg.mdls)
     } else {

@@ -34,12 +34,20 @@ label.help <- function(label,id){
 #                       'variablemetadata' = fread('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfbi0zZ0txM2daQ1U'))
 
 #### Loading data from local file [SERVER]
-data.exemple1 <- readRDS('data/glucids.rds')
-data.exemple2 <- readRDS('data/aminoacids.rds')
+# data.exemple1 <- readRDS('data/glucids.rds')
+# data.exemple2 <- readRDS('data/aminoacids.rds')
 
 #### Loading data from local file [LOCAL]
 #data.exemple1 <- readRDS('./Glucids_App/data/glucids.rds')
 #data.exemple2 <- readRDS('./Glucids_Appdata/aminoacids.rds')
+
+## From excel file
+#data.exemple1 <- list('datamatrix' = as.data.table(read_excel('C:/Users/sdechaumet/Google Drive/Perso/Programming/R/03_Development/Targeted_tool/Data/Amino_acids/Aminoacids_vf.xlsx', sheet = 1, na = "")),
+#                      'samplemetadata' = as.data.table(read_excel('C:/Users/sdechaumet/Google Drive/Perso/Programming/R/03_Development/Targeted_tool/Data/Amino_acids/Aminoacids_vf.xlsx', sheet = 2, na = "")),
+#                      'variablemetadata' = as.data.table(read_excel('C:/Users/sdechaumet/Google Drive/Perso/Programming/R/03_Development/Targeted_tool/Data/Amino_acids/Aminoacids_vf.xlsx', sheet = 3, na = "")))
+#
+
+
 
 # Define server logic required to draw a histogram
 shinyServer(function(input, output, session) {
@@ -49,6 +57,7 @@ shinyServer(function(input, output, session) {
   
   #### Importation des données [OK]
   file_input_sheets <- reactive({
+    req(input$dataset)
     if(input$dataset != 'Importer un fichier'){return(NULL)}
     validate(need(!is.null(input$file_input), "Aucun fichier compatible chargé"))
     data <- input$file_input
@@ -62,7 +71,7 @@ shinyServer(function(input, output, session) {
   dataset <- eventReactive(input$submit_data, {
     disable(id = 'submit_data')
     on.exit(enable(id = 'submit_data'))
-    dataset_choice <- input$dataset
+    dataset_choice <- req(input$dataset)
     if (dataset_choice == 'Aucun') {return(NULL)}
     if (dataset_choice == 'Glucides (GC-FID)') {return(data.exemple1)}
     if (dataset_choice == 'Acides aminés (UPLC-DAD)') {return(data.exemple2)}
@@ -75,13 +84,18 @@ shinyServer(function(input, output, session) {
       data <- input$file_input
       if (!is.null(data)) {
         file.rename(data$datapath, paste0(data$datapath, '.xlsx'))
-        return(list("datamatrix" = as.data.table(readxl::read_excel(paste0(data$datapath, '.xlsx'), sheet = as.numeric(input$sheet_datamatrix))),
-                    "samplemetadata" = as.data.table(readxl::read_excel(paste0(data$datapath, '.xlsx'), sheet = as.numeric(input$sheet_samples))),
-                    "variablemetadata" = as.data.table(readxl::read_excel(paste0(data$datapath, '.xlsx'), sheet = as.numeric(input$sheet_variables)))
-        ))
+        
+        temp.list <- list("datamatrix" = as.data.table(readxl::read_excel(paste0(data$datapath, '.xlsx'), sheet = as.numeric(input$sheet_datamatrix))),
+             "samplemetadata" = as.data.table(readxl::read_excel(paste0(data$datapath, '.xlsx'), sheet = as.numeric(input$sheet_samples))),
+             "variablemetadata" = as.data.table(readxl::read_excel(paste0(data$datapath, '.xlsx'), sheet = as.numeric(input$sheet_variables)))
+        )
+        if (!'batch' %in% names(temp.list[[2]])) {temp.list[[2]] <- temp.list[[2]][,batch := 1]}
+        return(temp.list)
       } else {return(NULL)}
     } else {return(NULL)}
   }, ignoreNULL = F)
+  
+  ################
   
   #### Check dataset [OK]
   dataset_input_check <- reactive({
@@ -106,7 +120,7 @@ shinyServer(function(input, output, session) {
     if (!is.null(data)) {
       sidebar_info_val[[1]] <- dim(data[[1]])[1]
       sidebar_info_val[[2]] <- dim(data[[3]])[1]
-      sidebar_info_val[[3]] <- ifelse(any(names(data[[2]]) == "batch") == FALSE, 1, length(unique(data[[2]][,batch])))
+      sidebar_info_val[[3]] <- ifelse(any(names(data[[2]]) == "batch") == FALSE, 0, length(unique(data[[2]][,batch])))
       sidebar_info_val[[4]] <- ifelse(any(names(data[[2]]) == "class") == FALSE, 0, data[[2]][class == "sample", .N])
       sidebar_info_val[[5]] <- ifelse(any(names(data[[2]]) == "class") == FALSE, 0, data[[2]][class == "standard", .N])
       sidebar_info_val[[6]] <- ifelse(any(names(data[[3]]) == "class") == FALSE, 0, 
@@ -115,14 +129,91 @@ shinyServer(function(input, output, session) {
     return(sidebar_info_val)
   })
   
-  #### Calculate standards CV of each variable inter & intra batchs
-  #    (only if multiple standard by batch for intra, and if multiple batch for inter)
+  ########### CALCULATION TAB ###########
+  #### Plot SI in raw datas with error bar by batch and sample class
+  SI_raw_data <- reactive({
+    data <- dataset()
+    if(is.null(data)) {return(NULL)}
+    datamatrix.splid <- names(data[[1]])[1]
+    samplemetadata.splid <- names(data[[2]])[1]
+    SI_val <- as.character(data[[3]][class == 'SI', 1])
+    temp <- merge(data[[2]][,.('SampleID' = get(samplemetadata.splid), class, batch)], data[[1]][,.('SampleID' = get(datamatrix.splid), 'SI' = get(SI_val), 'Variable' = paste0(SI_val))], by.x = datamatrix.splid, by.y = samplemetadata.splid)
+    temp <- temp[,.(meanSI = mean(SI, na.rm = T), sdSI = sd(SI, na.rm = T), Variable), by = c('batch', 'class')]
+    return(temp)
+  })
+
+  output$SI_raw_plot <- renderPlot({
+    temp <- SI_raw_data()
+    if (is.null(SI_raw_data)) {return(NULL)}
+    ggplot(temp, aes(as.factor(batch), meanSI, fill = class, ymin = meanSI-sdSI, ymax = meanSI+sdSI)) +
+      geom_bar(stat = "identity", position = position_dodge(width=0.9), color = 'black') +
+      geom_errorbar(position = position_dodge(width=0.9), width = 0.5) +
+      theme_bw() +
+      labs(title = paste0("Moyenne et écarts-types des valeurs brutes du SI (", unique(temp[,Variable]), ")"), x = 'batch', y = '', fill = 'Classe')
+  })
+  
   #### Calculate content in samples with extraction volume, SI concentration and unit
+  data_conc <- eventReactive(input$submit_data_calc, {
+    disable(id = 'submit_data_calc')
+    on.exit(enable(id = 'submit_data_calc'))
+      data <- dataset()
+      if(is.null(data)) {return(NULL)}
+      datamatrix.splid <- names(data[[1]])[1]
+      samplemetadata.splid <- names(data[[2]])[1]
+      SI_val <- as.character(data[[3]][class == 'SI', 1])
+      ## calculate sample amount
+      temp.datamatrix <- data[[1]]
+      batch.list <- split(temp.datamatrix, data[[2]][,.(batch)])
+      batch.class.list <- lapply(batch.list, function(x) {split(x, data[[2]][,.(class)])})
+      temp.std <- lapply(batch.class.list, function(x) {t(x$standard[,-1][, lapply(.SD, function(x) {mean(x, na.rm = T)})])})
+      temp.respF <- lapply(temp.std, function(x) {x/data[[3]][,conc]})
+      temp.list.val <- mapply(function(x,y) {lapply(x, function(z) rbind(t(z)[1,], t(z)[-1,]/y[,1]))}, batch.class.list, temp.respF, SIMPLIFY = F)
+      temp.list.val <- lapply(temp.list.val, function(x) {lapply(x, t)})
+      temp.datamatrix.amount <- as.data.table(do.call(rbind, lapply(temp.list.val, function(x) do.call(rbind, x))), keep.rownames = F)
+      setnames(temp.datamatrix.amount, "V1", "SampleID")
+      # divide by ms and calculate amount in extraction volume
+      setkeyv(temp.datamatrix.amount, "SampleID")
+      setkeyv(data[[2]], samplemetadata.splid)
+      validate(need(identical(temp.datamatrix.amount[,1], data[[2]][,1]), "Problème dans la fonction 'data_conc', contacter le développeur."),
+               need('MS' %in% names(data[[2]]), "Il faut définir la colonne à utiliser pour la MS/MF"),
+               need(!is.null(input$vol_extraction), "Entrer un volume d'extraction"),
+               need(!is.numeric(input$vol_extraction), "Entrer un chiffre pour le volume d'extraction"),
+               need(!is.null(input$dilution_fac), "Entrer un facteur de dilution"),
+               need(!is.numeric(input$dilution_fac), "Entrer un chiffre pour le facteur de dilution"))
+      
+      temp.datamatrix <- cbind(temp.datamatrix.amount[,1], (((temp.datamatrix.amount[,-1]/data[[2]][,MS])*1000/input$vol_extraction)/input$dilution_fac))
+      return(list('datamatrix' = temp.datamatrix,
+                  'samplemetadata' = data[[2]],
+                  'variablemetadata' = data[[3]]))
+      
+      # conc_X.Ec3 <- (((Resp_X.Ec)*(Conc_X.St)) / (Resp_X.St))
+      # conc_X.Ec3 <- conc_X.Ec3 / ((Resp_IS.Ec/Conc_IS.Ec)/(Resp_IS.St/Conc_IS.St))
+  })
+  
+  output$data_calc <- renderPlot({
+    temp <- data_conc()
+    if (is.null(temp)) {return(NULL)}
+    metadata.spleid <- names(temp[[2]])[1]
+    datamatrix.spleid <- names(temp[[1]])[1]
+    temp.plot <- merge(temp[[2]], temp[[1]], by.x = metadata.spleid, by.y = datamatrix.spleid)
+    temp.plot <- melt(temp.plot, id.vars = names(temp[[2]]))[,.('Mean' = mean(value, na.rm = T)), by = c('class', 'batch', 'variable')]
+    
+    return(
+      ggplot(temp.plot, aes(variable, Mean, fill = class)) +
+      geom_bar(stat = 'identity', position = position_dodge(width=0.9), color = 'black') +
+      facet_grid(.~batch) +
+      theme_bw() +
+      coord_flip()
+      )
+  })
+  
+  #### Calculate SI deviation in samples (or show SI levels in barplot)
+  #### Correct SI by batch
+  
   
   
   ########### CORRECTIONS TAB ########### SI correction ; opt: inter and intra-batch normalization for each compounds using QCs or STD
-  #### Calculate SI deviation in samples (or show SI levels in barplot)
-  #### Correct SI by batch
+
   
   
   ############ ANALYSES TAB ############
@@ -148,7 +239,19 @@ shinyServer(function(input, output, session) {
         bsTooltip('sheet_variables_help', title = 'Feuille de calcul comprenant la liste des variables avec une colonne "class" et "conc"', placement = 'right', trigger = 'hover')
       )
     )
-  }) 
+  })
+  
+  output$dataset_check <- renderUI({
+    data <- dataset()
+    if (is.null(data)) {return(p("Importer un fichier"))}
+    if (any(apply(data[[1]][,-1], 2, is.numeric)) == F) {
+      return(
+        list(div("Présence de texte dans le feuillet (1)", style = "color:red"),
+             div("Vérifier l'abscence de NA, nd et autre caractères", style = "color:red"))
+      )
+    }
+    return(div("Tout semble OK", style = "color:green"))
+  })
   
   #### Demonstration data download [OK]
   output$download_exemple1 <- downloadHandler(
@@ -163,13 +266,13 @@ shinyServer(function(input, output, session) {
   output$progress_box <- renderUI({
     status <- dataset_input_check()
     return(list(
-      box(width = 12, height = 40, solidHeader = T, title = 'Import', status = status[[1]]),
-      box(width = 12, height = 40, solidHeader = T, title = 'Duplicats échantillons', status = status[[2]]),
-      box(width = 12, height = 40, solidHeader = T, title = 'Duplicats variables', status =  status[[3]]),
-      box(width = 12, height = 40, solidHeader = T, title = 'lignes (1) = lignes (2)', status =  status[[4]]),
-      box(width = 12, height = 40, solidHeader = T, title = 'colonnes (1) = lignes (3)', status =  status[[5]]),
-      box(width = 12, height = 40, solidHeader = T, title = 'colonne "class" dans (2)', status =  status[[6]]),
-      box(width = 12, height = 40, solidHeader = T, title = 'colonne "class" avec SI dans (3)', status =  status[[7]])
+             box(width = 12, height = 40, solidHeader = T, title = 'Import', status = status[[1]]),
+             box(width = 12, height = 40, solidHeader = T, title = 'Duplicats échantillons', status = status[[2]]),
+             box(width = 12, height = 40, solidHeader = T, title = 'Duplicats variables', status =  status[[3]]),
+             box(width = 12, height = 40, solidHeader = T, title = 'lignes (1) = lignes (2)', status =  status[[4]]),
+             box(width = 12, height = 40, solidHeader = T, title = 'colonnes (1) = lignes (3)', status =  status[[5]]),
+             box(width = 12, height = 40, solidHeader = T, title = 'colonne "class" dans (2)', status =  status[[6]]),
+             box(width = 12, height = 40, solidHeader = T, title = 'colonne "class" avec SI dans (3)', status =  status[[7]])
     ))
   })
   

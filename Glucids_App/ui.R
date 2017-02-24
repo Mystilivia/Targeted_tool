@@ -71,15 +71,15 @@ dashboardPage(
                   tabItem(tabName = "data",
                           fluidRow(
                             box(width = 7,
-                                title = "Description", solidHeader = T, status = 'success',
+                                title = "Description", solidHeader = T, status = 'info',
                                 includeMarkdown('text/description.md')
                             ),
                             column(width = 5,
-                                   box(width = 12, title = 'Exemple feuillet (1)', solidHeader = T, collapsible = T, collapsed = T, status = 'success',
+                                   box(width = 12, title = 'Exemple feuillet (1)', solidHeader = T, collapsible = T, collapsed = T, status = 'info',
                                        img(src="table_1.png", height = 120)),
-                                   box(width = 12, title = 'Exemple feuillet (2)', solidHeader = T, collapsible = T, collapsed = T, status = 'success',
+                                   box(width = 12, title = 'Exemple feuillet (2)', solidHeader = T, collapsible = T, collapsed = T, status = 'info',
                                        img(src="table_2.png", height = 120)),
-                                   box(width = 12, title = 'Exemple feuillet (3)', solidHeader = T, collapsible = T, collapsed = T, status = 'success',
+                                   box(width = 12, title = 'Exemple feuillet (3)', solidHeader = T, collapsible = T, collapsed = T, status = 'info',
                                        img(src="table_3.png", height = 120))
                                    )
                           ),
@@ -99,25 +99,41 @@ dashboardPage(
                                                                   uiOutput("select_sheets"))
                                 ),
                                 hr(),
-                                actionButton('submit_data', 'Valider', icon = icon('check'))
+                                fluidRow(
+                                  column(width = 6,
+                                         actionButton('submit_data', 'Valider', icon = icon('check'))
+                                         ),
+                                  column(width = 6,
+                                         uiOutput("dataset_check")
+                                         )
+                                )
                             ),
                             box(width = 6, title = 'Vérification des données', solidHeader = T, status = 'primary',
                                 column(width = 12, uiOutput('progress_box'))
                             )
                           )
                   ),
+                  
                   #################################################
                   tabItem(tabName = "calculs",
                           box(width = 3, solidHeader = T, status = 'primary',
                               shiny::textInput('vol_extraction', label = "Volume d'extraction", value = 600),
                               fluidRow(column(width = 6,
-                                              shiny::textInput('conc_SI', label = "Concentration du SI", value = 0.1)),
+                                              shiny::textInput('conc_SI', label = label.help('Unité', 'unit_SI_help'), value = 0.1),
+                                              bsTooltip('unit_SI_help', title = 'Utiliser la même unité que pour les standards externes (feuillet (3))', placement = 'right', trigger = 'hover')
+                              ),
                                        column(width = 6,
-                                              shiny::textInput('unit_SI', label = "Unité", value = "mM"))
+                                              shiny::textInput('unit_SI', label = 'Unité', value = "µM")
+                                       )
                               ),
                               shiny::textInput('dilution_fac', label = "Facteur de dilution", placeholder = '1 = pas de dilution', value = 1),
                               actionButton('submit_data_calc', 'Valider', icon = icon('check'))
-                          )
+                          ),
+                          box(width = 9, solidHeader = T, status = 'primary',
+                              plotOutput('SI_raw_plot', height='250px')
+                          ),
+                          box(width = 12, solidHeader = T, status = 'primary',
+                              plotOutput('data_calc'))
                   ),
                   #################################################
                   tabItem(tabName = "correction",
