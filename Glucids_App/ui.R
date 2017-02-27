@@ -8,13 +8,9 @@
 #
 library(shiny)
 library(shinyjs)
-library(magrittr)
 library(DT)
 library(shinydashboard)
 library(shinyBS)
-library(data.table)
-library(ggplot2)
-library(readxl)
 library(markdown)
 library(curl)
 
