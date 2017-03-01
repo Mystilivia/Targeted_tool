@@ -62,6 +62,9 @@ dashboardPage(
   ),
   
   dashboardBody(useShinyjs(),
+                tags$head(tags$style("#dataset_check{font-size: 20px;
+                                     font-style: bold;
+                                     }")),
                 tabItems(
                   #################################################
                   tabItem(tabName = "data",
@@ -80,7 +83,7 @@ dashboardPage(
                                    )
                           ),
                           fluidRow(
-                            box(width = 6,
+                            box(width = 7,
                                 title = 'Choix des données', solidHeader = T, status = 'primary',
                                 selectInput('dataset', label = 'Choisir un jeu de données', choices = c('Aucun', 'Glucides (GC-FID)', 'Acides aminés (UPLC-DAD)', 'Importer un fichier')),
                                 conditionalPanel("input.dataset == 'Glucides (GC-FID)'",
@@ -95,46 +98,59 @@ dashboardPage(
                                                                   uiOutput("select_sheets"))
                                 ),
                                 hr(),
-                                fluidRow(
-                                  column(width = 6,
-                                         actionButton('submit_data', 'Valider', icon = icon('check'))
-                                         ),
-                                  column(width = 6,
-                                         uiOutput("dataset_check")
-                                         )
-                                )
+                                actionButton('submit_data', 'Valider', icon = icon('check'))
                             ),
-                            box(width = 6, title = 'Vérification des données', solidHeader = T, status = 'primary',
-                                column(width = 12, uiOutput('progress_box'))
+                            box(width = 5, title = 'Vérification des données', solidHeader = T, status = 'primary',
+                                column(width = 12, uiOutput('dataset_check'))
                             )
                           )
                   ),
                   
                   #################################################
                   tabItem(tabName = "calculs",
-                          box(width = 3, solidHeader = T, status = 'primary',
-                              shiny::textInput('vol_extraction', label = "Volume d'extraction", value = 600),
-                              fluidRow(column(width = 6,
-                                              shiny::textInput('conc_SI', label = label.help('Unité', 'unit_SI_help'), value = 0.1),
-                                              bsTooltip('unit_SI_help', title = 'Utiliser la même unité que pour les standards externes (feuillet (3))', placement = 'right', trigger = 'hover')
-                              ),
-                                       column(width = 6,
-                                              shiny::textInput('unit_SI', label = 'Unité', value = "µM")
-                                       )
-                              ),
-                              shiny::textInput('dilution_fac', label = "Facteur de dilution", placeholder = '1 = pas de dilution', value = 1),
-                              actionButton('submit_data_calc', 'Valider', icon = icon('check'))
+                            box(width = 4,
+                                title = 'Choix des données', solidHeader = T, status = 'primary',
+                                fluidRow(
+                                  column(6, shiny::textInput('vol_extraction', label = "Volume d'extraction", value = 600)),
+                                  column(6, shiny::textInput('dilution_fac', label = "Facteur de dilution", placeholder = '1 = pas de dilution', value = 1))
+                                ),
+                                hr(),
+                                fluidRow(
+                                  column(6, shiny::textInput('conc_SI', label = label.help('[SI] échantillons', 'unit_SI_help'), value = 0.1),
+                                  bsTooltip('unit_SI_help', title = 'Utiliser la même unité que pour les standards externes (feuillet (3))', placement = 'right', trigger = 'hover')),
+                                  column(6, shiny::textInput('unit_SI', label = 'Unité', value = "µM"))
+                                ),
+                                hr(),
+                                fluidRow(
+                                  column(6, selectizeInput('Mass_col', label = label.help('Masses Extraite', 'Mass_col_help'), choices = '', options = list(
+                                    maxItems = 1, placeholder = 'Colonne des masses')),  
+                                    bsTooltip('Mass_col_help', title = 'Choisir la colonne qui contient les masses extraites du feuillet (2)', placement = 'right', trigger = 'hover')),
+                                  column(6, shiny::textInput('unit_Mass', label = 'Unité', value = "mg de MS"))
+                                ),
+                                hr(),
+                                fluidRow(
+                                  column(width = 4, actionButton('submit_data_calc', 'Valider', icon = icon('check')))
+                                )
                           ),
-                          box(width = 9, solidHeader = T, status = 'primary',
-                              plotOutput('SI_raw_plot', height='250px')
-                          ),
-                          box(width = 12, solidHeader = T, status = 'primary',
-                              plotOutput('data_calc'))
+
+                          column(width = 8,
+                                 box(width = 12,
+                                     title= "Graphique", solidHeader = T, status = 'primary',
+                                     selectizeInput('sample_choice_1', label = 'Echantillon(s)', choices = '', multiple = T, width = '50%'),
+                                     plotOutput('data_calc', width = "auto", height = "300px")
+                                 ),
+                                 box(width = 12,
+                                     title = "Variation des standards internes dans les échantillons", solidHeader = T, status = 'primary',
+                                     plotOutput("data_calc_SI_plot", width = "auto", height = "300px")
+                                   )
+                            )
                   ),
                   #################################################
                   tabItem(tabName = "correction",
-                          h3("Appliquer une correction des données")
-                          
+                          h3("Appliquer une correction des données"),
+                          box(width = 8, solidHeader = T, status = 'primary',
+                             plotOutput('SI_raw_plot', height='250px')
+                          )
                   ),
                   #################################################
                   tabItem(tabName = "analysis",

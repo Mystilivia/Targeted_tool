@@ -1,0 +1,184 @@
+---
+title: "Testing"
+author: "Sylvain Dechaumet"
+date: "1 mars 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages}
+library(magrittr)
+library(DT)
+library(data.table)
+library(ggplot2)
+library(readxl)
+library(markdown)
+library(curl)
+```
+
+```{r data}
+data <- readRDS('./Glucids_App/data/glucids.rds')
+setnames(data[[1]], 1, 'SampleID')
+setnames(data[[2]], 1, 'SampleID')
+setnames(data[[3]], 1, 'VarID')
+data[[1]][,SampleID := as.character(SampleID)]
+data[[2]][,SampleID := as.character(SampleID)]
+data[[3]][,VarID := as.character(VarID)]
+setkeyv(data[[1]], 'SampleID')
+setkeyv(data[[2]], 'SampleID')
+setkeyv(data[[3]], 'VarID')
+setcolorder(data[[1]], c('SampleID', data[[3]][,VarID]))
+```
+
+
+## Concentration calculation in samples
+```{r TEST}
+test_A <- data.table('SampleID' = 1:20,
+                     'batch' = c('A','B'),
+                     'class' = rep(c('standard', rep('sample', 4)), 4), 
+                     'Met_A' = round(rnorm(20, 5, 1), 2), 
+                     'Met_B' = round(rnorm(20, 0.5, 0.1), 2),
+                     'Met_C' = round(rnorm(20, 10, 1), 2))
+setkeyv(test_A, 'ID')
+
+## Using data.table only [Faster]
+data_DT <- function(x) {
+  temp <- lapply(split(x, by = 'batch'), function(x) {
+    #x <- test_A
+    #x <- split(x, by = 'batch')[[1]]
+    col_sel <- c('Met_A', 'Met_B', 'Met_C')
+    temp.std <- x[class == 'standard', lapply(.SD, mean), .SDcols = col_sel]
+    temp.calc <- x[, (col_sel) := mapply(function(y,z){y*z}, .SD, temp.std, SIMPLIFY = F), .SDcols = col_sel]
+    temp.calc <- cbind(x[,1:3], temp.calc)
+    return(temp.calc)
+  })
+  return(do.call(rbind, temp)[order(batch, ID)])
+}
+data_DT(test_A)
+
+## Using melting and dcast [SLOWER]
+data_merge <- function(x) {
+  temp.L <- melt(x, id.vars = c('ID', 'batch', 'class'))
+  temp <- temp.L[class == 'standard', .(Conc = mean(value)), by = c('batch', 'class', 'variable')]
+  temp <- merge(temp.L, temp[,-c('class')], by = c('batch', 'variable'))
+  temp <- temp[, Calculated := value * Conc]
+  temp <- dcast(temp, ID+batch+class~variable, value.var = 'Calculated')
+  return(temp[order(batch, ID)])
+}
+data_merge(test_A)
+
+
+```
+
+```{r v2}
+data <- list("datamatrix" = test_A[,c(1,4:6)],
+             "samplemetadata" = data.table(test_A[,1:3], 'MS' = rnorm(20, 10, 1)),
+             "variablemetadata" = data.table('VarID' = c("Met_A", "Met_B", "Met_C"), 'class' = c("Glucide", "SI", "Glucide"), 'conc' = c(100,100,100))
+)
+#################
+data_DT <- function(x) {
+  # x <- data
+  y <- merge(x[[2]][,.(SampleID, batch, class)], x[[1]], by = 'SampleID')
+  col_sel <- names(x[[1]])[-1]
+  temp <- lapply(split(y, by = 'batch'), function(w) {
+    # w <- split(y, by = 'batch')[[1]]
+    temp.std.respF <- w[class == 'standard', lapply(.SD, function(v) {mean(v, na.rm = T)}), .SDcols = col_sel]/x[[3]][,conc]
+    temp.calc <- w[, (col_sel) := mapply(function(y,z){y/z}, .SD, temp.std.respF, SIMPLIFY = F), .SDcols = col_sel]
+    return(temp.calc)
+  })
+  temp <- do.call(rbind, temp)[order(batch, SampleID)]
+  setkeyv(temp, 'SampleID')
+  return(list('datamatrix' = temp[,-c('batch', 'class')],
+              'samplemetadata' = x[[2]],
+              'variablemetadata' = x[[3]])
+  )
+}
+####
+data_Rdmt <- function(x) {
+  # x <- data
+  y <- merge(x[[2]][,.(SampleID, batch, class)], x[[1]], by = 'SampleID')
+  col_sel <- x[[3]][class == "SI", VarID]
+  temp <- lapply(split(y[,c('SampleID', 'batch', 'class', col_sel), with = F], by = 'batch'), function(w) {
+    # w <- split(y[,c('SampleID', 'batch', 'class', col_sel), with = F], by = 'batch')[[1]]
+    temp.STD.SI <- w[class == 'standard', mean(get(col_sel), na.rm = T)]/x[[3]][VarID == col_sel, conc]
+    temp.SPL.SI <- w[class == 'sample', get(col_sel)/input$conc_SI/input$dilution_fac]
+    w[class == 'sample', Rdmt := temp.SPL.SI/temp.STD.SI]
+    return(w)
+  })
+  temp <- do.call(rbind, temp)[order(batch, SampleID)]
+  temp.sple <- merge(x[[2]], temp[,.(SampleID, Rdmt)], by = 'SampleID')
+  setkeyv(temp.sple, 'SampleID')
+  return(list('datamatrix' = x[[1]],
+              'samplemetadata' = temp.sple,
+              'variablemetadata' = x[[3]])
+  )
+}
+#####
+
+#################
+data_conc <- eventReactive(input$submit_data_calc, {
+  disable(id = 'submit_data_calc')
+  on.exit(enable(id = 'submit_data_calc'))
+  data <- req(dataset_keyed())
+  isolate({
+    data_calc_step1 <- data_DT(data_Rdmt(data))
+    validate(need(identical(temp.datamatrix.amount[,1], data[[2]][,1]), "Problème dans la fonction 'data_conc', contacter le développeur."),
+             need(!is.null(input$vol_extraction), "Entrer un volume d'extraction"),
+             need(!is.numeric(input$vol_extraction), "Entrer un chiffre pour le volume d'extraction"),
+             need(!is.null(input$dilution_fac), "Entrer un facteur de dilution"),
+             need(!is.numeric(input$dilution_fac), "Entrer un chiffre pour le facteur de dilution"),
+             need(!is.numeric(input$Mass_col), "Choisissez une colonne contenant les masses de départ"))
+    Col_sel <- names(data_calc_step1[[1]])[-1]
+    Fact_corr <- 1000/req(input$vol_extraction)/req(input$dilution_fac)
+    data_calc_step1[[1]][, (Col_sel) := lapply(.SD, function(x) {x/data_calc_step1[[2]][,get(req(input$Mass_col))]*Fact_corr}), .SDcols = Col_sel]
+    return(data_calc_step1)
+  })
+  # conc_X.Ec3 <- (((Resp_X.Ec)*(Conc_X.St)) / (Resp_X.St))
+  # conc_X.Ec3 <- conc_X.Ec3 / ((Resp_IS.Ec/Conc_IS.Ec)/(Resp_IS.St/Conc_IS.St))
+})
+```
+
+```{r v1}
+  data_conc <- eventReactive(input$submit_data_calc, {
+    disable(id = 'submit_data_calc')
+    on.exit(enable(id = 'submit_data_calc'))
+    data <- req(dataset_keyed())
+    isolate({
+      SI_val <- as.character(data[[3]][class == 'SI', 1])
+      ## calculate sample amount
+      temp.datamatrix <- merge(data[[2]][,.(SampleID, batch, class)], data[[1]], by = 'SampleID')
+      batch.list <- split(temp.datamatrix, by = c('batch', 'class'), flatten = F)
+      temp.std <- lapply(batch.list, function(x) {t(x$standard[,-c(1:3)][, lapply(.SD, function(x) {mean(x, na.rm = T)})])})
+      temp.respF <- lapply(temp.std, function(x) {x/data[[3]][,conc]})
+      temp.list.val <- mapply(function(x,y) {lapply(x, function(z) t(z[,-c(1:3)])/y[,1])}, batch.list, temp.respF, SIMPLIFY = F)
+      temp.list.val <- mapply(function(x,y) {mapply(function(z,w) {cbind(z[,1:3], t(w))}, x, y, SIMPLIFY = F)}, batch.list, temp.list.val, SIMPLIFY = F)
+      temp.datamatrix.amount <- as.data.table(do.call(rbind, lapply(temp.list.val, function(x) do.call(rbind, x))), keep.rownames = F)[,-c('batch', 'class')]
+      temp.datamatrix.amount <- temp.datamatrix.amount[,SampleID := as.character(SampleID)]
+      #divide by ms and calculate amount in extraction volume
+      temp.datamatrix.amount <- temp.datamatrix.amount[,SampleID := as.character(SampleID)]
+      setkeyv(temp.datamatrix.amount, "SampleID")
+
+      validate(need(identical(temp.datamatrix.amount[,1], data[[2]][,1]), "Problème dans la fonction 'data_conc', contacter le développeur."),
+               need(!is.null(input$vol_extraction), "Entrer un volume d'extraction"),
+               need(!is.numeric(input$vol_extraction), "Entrer un chiffre pour le volume d'extraction"),
+               need(!is.null(input$dilution_fac), "Entrer un facteur de dilution"),
+               need(!is.numeric(input$dilution_fac), "Entrer un chiffre pour le facteur de dilution"),
+               need(!is.numeric(input$Mass_col), "Choisissez une colonne contenant les masses de départ"))
+      # input <- list()
+      # input$vol_extraction <- 600
+      # input$Mass_col <- "MS"
+      # input$conc_SI <- 100
+      # input$dilution_fac <- 2
+      temp.datamatrix <- cbind(temp.datamatrix.amount[,1], (((temp.datamatrix.amount[,-1]/data[[2]][,get(as.character(input$Mass_col))])*1000/as.numeric(input$vol_extraction))/as.numeric(input$dilution_fac)))
+      return(list('datamatrix' = temp.datamatrix,
+                  'samplemetadata' = data[[2]],
+                  'variablemetadata' = data[[3]]))
+    })
+    # conc_X.Ec3 <- (((Resp_X.Ec)*(Conc_X.St)) / (Resp_X.St))
+    # conc_X.Ec3 <- conc_X.Ec3 / ((Resp_IS.Ec/Conc_IS.Ec)/(Resp_IS.St/Conc_IS.St))
+  })
+```
+

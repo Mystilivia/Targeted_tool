@@ -47,6 +47,48 @@ label.help <- function(label,id){
 #                      'variablemetadata' = as.data.table(read_excel('C:/Users/sdechaumet/Google Drive/Perso/Programming/R/03_Development/Targeted_tool/Data/Amino_acids/Aminoacids_vf.xlsx', sheet = 3, na = "")))
 
 
+###################### HELPER ######################
+#################
+data_DT <- function(x) {
+  # x <- data
+  y <- merge(x[[2]][,.(SampleID, batch, class)], x[[1]], by = 'SampleID')
+  col_sel <- names(x[[1]])[-1]
+  temp <- lapply(split(y, by = 'batch'), function(w) {
+    # w <- split(y, by = 'batch')[[1]]
+    temp.std.respF <- w[class == 'standard', lapply(.SD, function(v) {mean(v, na.rm = T)}), .SDcols = col_sel]/x[[3]][,conc]
+    temp.calc <- w[, (col_sel) := mapply(function(y,z){y/z}, .SD, temp.std.respF, SIMPLIFY = F), .SDcols = col_sel]
+    return(temp.calc)
+  })
+  temp <- do.call(rbind, temp)[order(batch, SampleID)]
+  setkeyv(temp, 'SampleID')
+  return(list('datamatrix' = temp[,-c('batch', 'class')],
+              'samplemetadata' = x[[2]],
+              'variablemetadata' = x[[3]])
+  )
+}
+####
+data_Rdmt <- function(x) {
+  # x <- data
+  y <- merge(x[[2]][,.(SampleID, batch, class)], x[[1]], by = 'SampleID')
+  col_sel <- x[[3]][class == "SI", VarID]
+  temp <- lapply(split(y[,c('SampleID', 'batch', 'class', col_sel), with = F], by = 'batch'), function(w) {
+    # w <- split(y[,c('SampleID', 'batch', 'class', col_sel), with = F], by = 'batch')[[1]]
+    temp.STD.SI <- w[class == 'standard', mean(get(col_sel), na.rm = T)]/x[[3]][VarID == col_sel, conc]
+    temp.SPL.SI <- w[class == 'sample', get(col_sel)/input$conc_SI/input$dilution_fac]
+    w[class == 'sample', Rdmt := temp.SPL.SI/temp.STD.SI]
+    return(w)
+  })
+  temp <- do.call(rbind, temp)[order(batch, SampleID)]
+  temp.sple <- merge(x[[2]], temp[,.(SampleID, Rdmt)], by = 'SampleID')
+  setkeyv(temp.sple, 'SampleID')
+  return(list('datamatrix' = x[[1]],
+              'samplemetadata' = temp.sple,
+              'variablemetadata' = x[[3]])
+  )
+}
+#####
+####################################################
+
 
 
 # Define server logic required to draw a histogram
@@ -70,17 +112,13 @@ shinyServer(function(input, output, session) {
                       "variablemetadata" = setDT(readxl::read_excel(paste0(data.file$datapath, '.xlsx'), sheet = as.numeric(input$sheet_variables)))
     )
     if (!'batch' %in% names(temp.list[[2]])) {temp.list[[2]] <- temp.list[[2]][,batch := 1]}
-    setnames(temp.list[[1]], 1, 'SampleID')
-    setnames(temp.list[[2]], 1, 'SampleID')
-    setkeyv(temp.list[[1]], 'SampleID')
-    setkeyv(temp.list[[2]], 'SampleID')
     return(temp.list)
   })
   ######
   file_input_sheets <- reactive({
     req(input$dataset)
     if (input$dataset != 'Importer un fichier') {return(NULL)}
-    validate(need(!is.null(input$file_input), "Aucun fichier compatible chargé"))
+    validate(need(!is.null(input$file_input), ""))
     data <- input$file_input
     if (is.null(data)) {return(NULL)}
     file.rename(data$datapath, paste0(data$datapath, '.xlsx'))
@@ -99,63 +137,69 @@ shinyServer(function(input, output, session) {
     else {return(NULL)}
   }, ignoreNULL = F)
   
-  ######################################################
+  ######
   
-  # #### Check dataset [OK]
-  # dataset_input_check <- reactive({
-  #   data <- dataset()
-  #   status <- as.list(rep("primary", 7))
-  #   status[[1]] <- ifelse(is.null(data), "warning", "success")
-  #   if (status[[1]] == "success") {
-  #     status[[2]] <- ifelse(any(duplicated(data[[1]][1]) | duplicated(data[[2]][1])) == TRUE, "danger", "success")
-  #     status[[3]] <- ifelse(any(duplicated(names(data[[1]]))) == TRUE | any(duplicated(data[[3]][[1]])) == TRUE, "danger", "success")
-  #     status[[4]] <- ifelse(!identical(data[[1]][,1], data[[2]][,1]), "danger", "success")
-  #     status[[5]] <- ifelse(!identical(names(data[[1]])[-1], data[[3]][[1]]), "danger", "success")
-  #     status[[6]] <- ifelse(!'class' %in% names(data[[2]]), "danger", "success")
-  #     status[[7]] <- ifelse(!'class' %in% names(data[[3]]), "danger", ifelse(!'SI' %in% data[[3]][,class], "danger", "success"))
-  #   }
-  #   return(status)
-  # })
-
-   #### common check #### [DEV]
+  dataset_keyed <- reactive({
+    data <- req(dataset())
+    status <- req(dataset_checker())
+    if (all(as.data.table(do.call(rbind,status))[,status] == 'success')) {
+      setnames(data[[1]], 1, 'SampleID')
+      setnames(data[[2]], 1, 'SampleID')
+      setnames(data[[3]], 1, 'VarID')
+      data[[1]][,SampleID := as.character(SampleID)]
+      data[[2]][,SampleID := as.character(SampleID)]
+      data[[3]][,VarID := as.character(VarID)]
+      setkeyv(data[[1]], 'SampleID')
+      setkeyv(data[[2]], 'SampleID')
+      setkeyv(data[[3]], 'VarID')
+      setcolorder(data[[1]], c('SampleID', data[[3]][,VarID]))
+      Mass_col_pre <- ifelse('MS' %in% names(data[[2]]), 'MS',
+                             ifelse('MF' %in% names(data[[2]]), 'MF', names(data[[2]])[1]))
+      updateSelectizeInput(session, 'Mass_col', label = NULL, choices = names(data[[2]]), selected = Mass_col_pre, server = T)
+      return(data)
+    } else {return(NULL)}
+  })
+  
+  
+  ######################################################
+   #### common check #### [OK]
    dataset_checker <- reactive({
+     status_list <- rep(list(list('status' = "primary", 'value' = 0, 'message' = NULL)), 14)
      data <- dataset()
-     status_list <- rep(list(list('status' = "primary", 'value' = NULL, 'message' = NULL)), 14)
-     
      if (is.null(data)) {
-       status_list[[1]] <- list('status' = "warning", 'value' = NULL, 'message' = 'Aucune données compatible chargées.')
+       status_list[[1]] <- list('status' = "warning", 'value' = NA, 'message' = 'Aucune données compatible chargées.')
      } else {
        ## Importation ok
-       status_list[[1]] <- list('status' = 'success', 'value' = NULL, 'message' = NULL)
+       status_list[[1]] <- list('status' = 'success', 'value' = NA, 'message' = NULL)
        ## Check datamatrix as only values
        if (any(data[[1]][,-1][,lapply(.SD, is.numeric)] == F)) {
          status_list[[2]] <- list('status' = 'danger',
                                   'value' = names(data[[1]])[which(data[[1]][,lapply(.SD, is.numeric)] == F)],
                                   'message' = "Le feuillet 1 comprends du texte ou des caractères spéciaux. Vérifier l'absence de 'NA' 'Nan' 'nd' 'espaces' ','.")
-       } else {status_list[[2]] <- list('status' = 'success', 'value' = NULL, 'message' = NULL)}
+       } else {status_list[[2]] <- list('status' = 'success', 'value' = NA, 'message' = NULL)}
        ## Check duplicates in (1) or (2) or (3)
        if(any(duplicated(data[[1]][,1]) == T)) {
          status_list[[3]] <- list('status' = 'danger', 'value' = data[[1]][duplicated(),1][[1]], 'message' = "Certains échantillons sont dupliqués dans l'onglet (1)")
-       } else {status_list[[3]] <- list('status' = 'success', 'value' = NULL, 'message' = NULL)}
+       } else {status_list[[3]] <- list('status' = 'success', 'value' = NA, 'message' = NULL)}
        if(any(duplicated(data[[2]][,1]) == T)) {
          status_list[[4]] <- list('status' = 'danger', 'value' = data[[2]][duplicated(),1][[1]], 'message' = "Certains échantillons sont dupliqués dans l'onglet (2)")
-       } else {status_list[[4]] <- list('status' = 'success', 'value' = NULL, 'message' = NULL)}
+       } else {status_list[[4]] <- list('status' = 'success', 'value' = NA, 'message' = NULL)}
        if(any(duplicated(data[[3]][,1]) == T)) {
          status_list[[5]] <- list('status' = 'danger', 'value' = data[[3]][duplicated(),1][[1]], 'message' = "Certains échantillons sont dupliqués dans l'onglet (3)")
-       } else {status_list[[5]] <- list('status' = 'success', 'value' = NULL, 'message' = NULL)}
+       } else {status_list[[5]] <- list('status' = 'success', 'value' = NA, 'message' = NULL)}
        ## Check consistency in (1) (2) and (1) (3)
        if(!identical(data[[1]][,1], data[[2]][,1])) {
-         status_list[[6]] <- list('status' = 'danger', 'value' = NULL, 'message' = "La première colonne de l'onglet (1) doit être identique à celle de l'onglet (2)")
-       } else {status_list[[6]] <- list('status' = 'success', 'value' = NULL, 'message' = NULL)}
+         status_list[[6]] <- list('status' = 'danger', 'value' = NA, 'message' = "La première colonne de l'onglet (1) doit être identique à celle de l'onglet (2)")
+       } else {status_list[[6]] <- list('status' = 'success', 'value' = NA, 'message' = NULL)}
        if(any(names(data[[1]][,-1]) %in% data[[3]][,1][[1]] == F)) {
-         status_list[[7]] <- list('status' = 'danger', 'value' = NULL, 'message' = "Les noms de variables de l'onglet (1) ne sont pas présent dans l'onglet (3)")
-       } else {status_list[[7]] <- list('status' = 'success', 'value' = NULL, 'message' = NULL)
+         status_list[[7]] <- list('status' = 'danger', 'value' = NA, 'message' = "Les noms de variables de l'onglet (1) ne sont pas présent dans l'onglet (3)")
+       } else {status_list[[7]] <- list('status' = 'success', 'value' = NA, 'message' = NULL)
        if(!identical(data[[3]][,1][[1]], names(data[[1]][,-1]))) {
-         status_list[[8]] <- list('status' = 'danger', 'value' = 0, 'message' = "Les noms de variables de l'onglet (1) ne sont pas dans le même ordre que dans l'onglet (3), ils ont été replacés dans l'ordre")
+         status_list[[8]] <- list('status' = 'danger', 'value' = 0, 'message' = "Les noms de variables de l'onglet (1) ne sont pas dans le même ordre que dans l'onglet (3)")
        } else {status_list[[8]] <- list('status' = 'success', 'value' = data[[3]][,.N], 'message' = NULL)}
        if(!'class' %in% names(data[[2]])) {
-         status_list[[9]] <- list('status' = 'danger', 'value' = NULL, 'message' = "Il n'y a pas de colonne 'class' dans l'onglet (2)")
-       } else {status_list[[9]] <- list('status' = 'success', 'value' = NULL, 'message' = NULL)
+         status_list[[9]] <- list('status' = 'danger', 'value' = NA, 'message' = "Il n'y a pas de colonne 'class' dans l'onglet (2)")
+       } else {status_list[[9]] <- list('status' = 'success', 'value' = NA, 'message' = NULL)
        if(!'standard' %in% data[[2]][,class]) {
          status_list[[10]] <- list('status' = 'danger', 'value' = 0, 'message' = "Il n'y a pas de 'standard' dans l'onglet (2)")
        } else {status_list[[10]] <- list('status' = 'success', 'value' = data[[2]][class == 'standard', .N], 'message' = NULL)
@@ -163,8 +207,8 @@ shinyServer(function(input, output, session) {
          status_list[[11]] <- list('status' = 'danger', 'value' = 0, 'message' = "Il n'y a pas de 'sample' dans l'onglet (2)")
        } else {status_list[[11]] <- list('status' = 'success', 'value' = data[[2]][class == 'sample', .N], 'message' = NULL)}}}
        if(!'class' %in% names(data[[3]])) {
-         status_list[[12]] <- list('status' = 'danger', 'value' = NULL, 'message' = "Il n'y a pas de colonne 'class' dans l'onglet (3)")
-       } else {status_list[[12]] <- list('status' = 'success', 'value' = NULL, 'message' = NULL)
+         status_list[[12]] <- list('status' = 'danger', 'value' = NA, 'message' = "Il n'y a pas de colonne 'class' dans l'onglet (3)")
+       } else {status_list[[12]] <- list('status' = 'success', 'value' = NA, 'message' = NULL)
        if(!'SI' %in% data[[3]][,class]) {
          status_list[[13]] <- list('status' = 'warning', 'value' = 0, 'message' = "Il n'y a pas de 'SI' dans l'onglet (3)")
        } else {status_list[[13]] <- list('status' = 'success', 'value' = data[[3]][class == 'SI', 1][[1]], 'message' = NULL)
@@ -173,34 +217,6 @@ shinyServer(function(input, output, session) {
        } else {status_list[[14]] <- list('status' = 'success', 'value' = length(unique(data[[2]][, batch])), 'message' = NULL)}}}}}
      return(status_list)
    })
-   
-  # if checker ok, load data and set keys and variable order
-  output$progress_box <- renderUI({
-    status <- dataset_checker()
-    return(list(
-      column(width = 4,
-             box(width = 12, height = 40, solidHeader = T, title = '[1]', status = status[[1]]$status),
-             box(width = 12, height = 40, solidHeader = T, title = '[2]', status = status[[2]]$status),
-             box(width = 12, height = 40, solidHeader = T, title = '[3]', status = status[[3]]$status),
-             box(width = 12, height = 40, solidHeader = T, title = '[4]', status = status[[4]]$status),
-             box(width = 12, height = 40, solidHeader = T, title = '[5]', status = status[[5]]$status)
-             ),
-      column(width = 4,
-             box(width = 12, height = 40, solidHeader = T, title = '[6]', status = status[[6]]$status),
-             box(width = 12, height = 40, solidHeader = T, title = '[7]', status = status[[7]]$status),
-             box(width = 12, height = 40, solidHeader = T, title = '[8]', status = status[[8]]$status),
-             box(width = 12, height = 40, solidHeader = T, title = '[9]', status = status[[9]]$status),
-             box(width = 12, height = 40, solidHeader = T, title = '[10]', status = status[[10]]$status)
-      ),
-      column(width = 4,
-             box(width = 12, height = 40, solidHeader = T, title = '[11]', status = status[[11]]$status),
-             box(width = 12, height = 40, solidHeader = T, title = '[12]', status = status[[12]]$status),
-             box(width = 12, height = 40, solidHeader = T, title = '[13]', status = status[[13]]$status),
-             box(width = 12, height = 40, solidHeader = T, title = '[14]', status = status[[14]]$status)
-      )
-      ))
-  })
-  ######################
   #### Sidebar information [OK]
   output$sidebar_info <- renderUI({
     status <- dataset_checker()
@@ -218,22 +234,21 @@ shinyServer(function(input, output, session) {
   output$dataset_check <- renderUI({
     status <- dataset_checker()
     status <- as.data.table(do.call(rbind, status))
-    if(any(status[,message] != "success")) {
-      div(status[,message])
+    if(any(status[,status] != "success")) {
+      return(div(status[,message], style = 'color:red'))
     } else {
-      div("Tout semble ok !")
+      temp <- dataset_keyed()
+      return(div("Tout semble ok !", style = 'color:green'))
     }
   })
   
   ########### CALCULATION TAB ###########
   #### Plot SI in raw datas with error bar by batch and sample class
   SI_raw_data <- reactive({
-    data <- dataset()
+    data <- dataset_keyed()
     if(is.null(data)) {return(NULL)}
-    datamatrix.splid <- names(data[[1]])[1]
-    samplemetadata.splid <- names(data[[2]])[1]
     SI_val <- as.character(data[[3]][class == 'SI', 1])
-    temp <- merge(data[[2]][,.('SampleID' = get(samplemetadata.splid), class, batch)], data[[1]][,.('SampleID' = get(datamatrix.splid), 'SI' = get(SI_val), 'Variable' = paste0(SI_val))], by.x = datamatrix.splid, by.y = samplemetadata.splid)
+    temp <- merge(data[[2]][,.(SampleID, class, batch)], data[[1]][,.(SampleID, 'SI' = get(SI_val), 'Variable' = paste0(SI_val))], by = 'SampleID')
     temp <- temp[,.(meanSI = mean(SI, na.rm = T), sdSI = sd(SI, na.rm = T), Variable = unique(Variable)), by = c('batch', 'class')]
     return(temp)
   })
@@ -249,71 +264,110 @@ shinyServer(function(input, output, session) {
   })
   
   #### Calculate content in samples with extraction volume, SI concentration and unit
-  data_conc <- eventReactive(input$submit_data_calc, {
+  data_conc2 <- eventReactive(input$submit_data_calc, {
     disable(id = 'submit_data_calc')
     on.exit(enable(id = 'submit_data_calc'))
-      data <- dataset()
-      if(is.null(data)) {return(NULL)}
-      datamatrix.splid <- names(data[[1]])[1]
-      samplemetadata.splid <- names(data[[2]])[1]
-      SI_val <- as.character(data[[3]][class == 'SI', 1])
-      ## calculate sample amount
-      temp.datamatrix <- merge(data[[2]][,.(SampleID, batch, class)], data[[1]], by.x = 'SampleID', by.y = 'SampleID')
-      batch.list <- split(temp.datamatrix, by = c('batch', 'class'), flatten = F)
-      temp.std <- lapply(batch.list, function(x) {t(x$standard[,-c(1:3)][, lapply(.SD, function(x) {mean(x, na.rm = T)})])})
-      temp.respF <- lapply(temp.std, function(x) {x/data[[3]][,conc]})
-      temp.list.val <- mapply(function(x,y) {lapply(x, function(z) rbind(t(z[,1:3]), t(z[,-c(1:3)])/y[,1]))}, batch.list, temp.respF, SIMPLIFY = F)
-      temp.list.val <- lapply(temp.list.val, function(x) {lapply(x, t)})
-      temp.datamatrix.amount <- as.data.table(do.call(rbind, lapply(temp.list.val, function(x) do.call(rbind, x))), keep.rownames = F)[,-c('batch', 'class')]
-      #temp.datamatrix.amount <- as.data.table(lapply(temp.list.val, function(x) do.call(rbind, x)), keep.rownames = F)
-      #divide by ms and calculate amount in extraction volume
-      temp.datamatrix.amount <- temp.datamatrix.amount[,SampleID := as.character(SampleID)]
-      data[[2]] <- data[[2]][,SampleID := as.character(SampleID)]
-      
-      setkeyv(temp.datamatrix.amount, "SampleID")
-      setkeyv(data[[2]], "SampleID")
-      
-      validate(need(identical(temp.datamatrix.amount[,1], data[[2]][,1]), "Problème dans la fonction 'data_conc', contacter le développeur."),
-               need('MS' %in% names(data[[2]]), "Il faut définir la colonne à utiliser pour la MS/MF"),
+    data <- req(dataset_keyed())
+    isolate({
+      data_calc_step1 <- data_DT(data_Rdmt(data))
+      validate(need(identical(data_calc_step1[[1]][,1], data_calc_step1[[2]][,1]), "Problème dans la fonction 'data_conc2', contacter le développeur."),
                need(!is.null(input$vol_extraction), "Entrer un volume d'extraction"),
                need(!is.numeric(input$vol_extraction), "Entrer un chiffre pour le volume d'extraction"),
                need(!is.null(input$dilution_fac), "Entrer un facteur de dilution"),
-               need(!is.numeric(input$dilution_fac), "Entrer un chiffre pour le facteur de dilution"))
-      
-      temp.datamatrix <- cbind(temp.datamatrix.amount[,1], (((temp.datamatrix.amount[,-1]/data[[2]][,MS])*1000/input$vol_extraction)/input$dilution_fac))
+               need(!is.numeric(input$dilution_fac), "Entrer un chiffre pour le facteur de dilution"),
+               need(!is.numeric(input$Mass_col), "Choisissez une colonne contenant les masses de départ"))
+      Col_sel <- names(data_calc_step1[[1]])[-1]
+      Fact_corr <- 1000/req(input$vol_extraction)/req(input$dilution_fac)
+      data_calc_step1[[1]][, (Col_sel) := lapply(.SD, function(x) {x/data_calc_step1[[2]][,get(req(input$Mass_col))]*Fact_corr}), .SDcols = Col_sel]
+      return(data_calc_step1)
+    })
+    # conc_X.Ec3 <- (((Resp_X.Ec)*(Conc_X.St)) / (Resp_X.St))
+    # conc_X.Ec3 <- conc_X.Ec3 / ((Resp_IS.Ec/Conc_IS.Ec)/(Resp_IS.St/Conc_IS.St))
+  })
+  
+  
+  data_conc <- eventReactive(input$submit_data_calc, {
+    disable(id = 'submit_data_calc')
+    on.exit(enable(id = 'submit_data_calc'))
+    data <- req(dataset_keyed())
+    isolate({
+      SI_val <- as.character(data[[3]][class == 'SI', 1])
+      ## calculate sample amount
+      temp.datamatrix <- merge(data[[2]][,.(SampleID, batch, class)], data[[1]], by = 'SampleID')
+      batch.list <- split(temp.datamatrix, by = c('batch', 'class'), flatten = F)
+      temp.std <- lapply(batch.list, function(x) {t(x$standard[,-c(1:3)][, lapply(.SD, function(x) {mean(x, na.rm = T)})])})
+      temp.respF <- lapply(temp.std, function(x) {x/data[[3]][,conc]})
+      temp.list.val <- mapply(function(x,y) {lapply(x, function(z) t(z[,-c(1:3)])/y[,1])}, batch.list, temp.respF, SIMPLIFY = F)
+      temp.list.val <- mapply(function(x,y) {mapply(function(z,w) {cbind(z[,1:3], t(w))}, x, y, SIMPLIFY = F)}, batch.list, temp.list.val, SIMPLIFY = F)
+      temp.datamatrix.amount <- as.data.table(do.call(rbind, lapply(temp.list.val, function(x) do.call(rbind, x))), keep.rownames = F)[,-c('batch', 'class')]
+      temp.datamatrix.amount <- temp.datamatrix.amount[,SampleID := as.character(SampleID)]
+      #divide by ms and calculate amount in extraction volume
+      temp.datamatrix.amount <- temp.datamatrix.amount[,SampleID := as.character(SampleID)]
+      setkeyv(temp.datamatrix.amount, "SampleID")
+
+      validate(need(identical(temp.datamatrix.amount[,1], data[[2]][,1]), "Problème dans la fonction 'data_conc', contacter le développeur."),
+               need(!is.null(input$vol_extraction), "Entrer un volume d'extraction"),
+               need(!is.numeric(input$vol_extraction), "Entrer un chiffre pour le volume d'extraction"),
+               need(!is.null(input$dilution_fac), "Entrer un facteur de dilution"),
+               need(!is.numeric(input$dilution_fac), "Entrer un chiffre pour le facteur de dilution"),
+               need(!is.numeric(input$Mass_col), "Choisissez une colonne contenant les masses de départ"))
+      # input <- list()
+      # input$vol_extraction <- 600
+      # input$Mass_col <- "MS"
+      # input$conc_SI <- 100
+      # input$dilution_fac <- 2
+      temp.datamatrix <- cbind(temp.datamatrix.amount[,1], (((temp.datamatrix.amount[,-1]/data[[2]][,get(as.character(input$Mass_col))])*1000/as.numeric(input$vol_extraction))/as.numeric(input$dilution_fac)))
       return(list('datamatrix' = temp.datamatrix,
                   'samplemetadata' = data[[2]],
                   'variablemetadata' = data[[3]]))
-      
-      # conc_X.Ec3 <- (((Resp_X.Ec)*(Conc_X.St)) / (Resp_X.St))
-      # conc_X.Ec3 <- conc_X.Ec3 / ((Resp_IS.Ec/Conc_IS.Ec)/(Resp_IS.St/Conc_IS.St))
+    })
+    # conc_X.Ec3 <- (((Resp_X.Ec)*(Conc_X.St)) / (Resp_X.St))
+    # conc_X.Ec3 <- conc_X.Ec3 / ((Resp_IS.Ec/Conc_IS.Ec)/(Resp_IS.St/Conc_IS.St))
   })
   
   output$data_calc <- renderPlot({
-    temp <- data_conc()
-    if (is.null(temp)) {return(NULL)}
-    metadata.spleid <- names(temp[[2]])[1]
-    datamatrix.spleid <- names(temp[[1]])[1]
-    temp.plot <- merge(temp[[2]], temp[[1]], by.x = metadata.spleid, by.y = datamatrix.spleid)
-    temp.plot <- melt(temp.plot, id.vars = names(temp[[2]]))[,.('Mean' = mean(value, na.rm = T)), by = c('class', 'batch', 'variable')]
-    
-    return(
-      ggplot(temp.plot, aes(variable, Mean, fill = class)) +
+    samples_selection <- req(input$sample_choice_1)
+    temp.plot <- req(data_conc_raw_plot())
+    temp.plot.sub <- temp.plot$data.plot[SampleID %in% samples_selection]
+    label_title <- ifelse(length(samples_selection) > 1, paste0("Teneurs dans les échantillons : ", paste(samples_selection, sep = "", collapse = ", ")), paste0("Teneurs dans l'échantillon : ", paste(samples_selection)))
+    ggplot(temp.plot.sub, aes(variable, value, fill = SampleID)) +
       geom_bar(stat = 'identity', position = position_dodge(width=0.9), color = 'black') +
-      facet_grid(.~batch) +
       theme_bw() +
-      coord_flip()
-      )
+      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+      labs(title = label_title, subtitle = "Données non-normalisées", x = "", y = paste0("en ", temp.plot$SE_unit_val, " / ", temp.plot$mass_unit_val))
+  })
+  
+  
+  ########### SI stability in samples + overall CV [DEV]
+  data_conc_raw_plot <- reactive({
+    data_calc_temp_plot <- req(data_conc2())
+    mass_unit_val <- req(input$unit_Mass)
+    SE_unit_val <- req(input$unit_SI)
+    temp.plot.data <- melt(merge(data_calc_temp_plot[[2]], data_calc_temp_plot[[1]], by = 'SampleID'), id.vars = names(data_calc_temp_plot[[2]]))
+    SI_val <- req(dataset_checker()[[13]]$value)
+    return(list('data.plot' = temp.plot.data,
+                'mass_unit_val' = mass_unit_val,
+                'SE_unit_val' = SE_unit_val,
+                'SI_val' = SI_val))
+  })
+  
+  output$data_calc_SI_plot <- renderPlot({
+    temp.plot <- req(data_conc_raw_plot())
+    temp.plot.sub <- temp.plot$data.plot[class == 'sample' & variable %in% temp.plot$SI_val]
+    title_label <- paste0("Variation du standard dans les échantillons (", temp.plot$SI_val, ")")
+    ggplot(temp.plot.sub, aes(reorder(SampleID, batch), value, fill = as.factor(batch))) +
+      geom_bar(stat = 'identity', position = position_dodge(width=0.9), color = 'black') +
+      theme_bw() +
+      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+      labs(title = title_label, x = "", y = paste0("en ", temp.plot$SE_unit_val, " / ", temp.plot$mass_unit_val))
   })
   
   #### Calculate SI deviation in samples (or show SI levels in barplot)
   #### Correct SI by batch
   
   
-  
   ########### CORRECTIONS TAB ########### SI correction ; opt: inter and intra-batch normalization for each compounds using QCs or STD
 
-  
   
   ############ ANALYSES TAB ############
   ## Interactive PCA
@@ -322,6 +376,27 @@ shinyServer(function(input, output, session) {
   
   
   ############################### OUTPUT ###############################
+  observe({
+    data_raw_calc <- req(data_conc2())
+    data_raw_calc_choice <- data_raw_calc[[2]][,SampleID]
+    updateSelectizeInput(session, 'sample_choice_1', choices = data_raw_calc[[2]], selected = data_raw_calc_choice[1], server = T, options = list(
+      placeholder = 'Choisissez un ou plusieurs échantillons',
+      valueField = 'SampleID',
+      labelField = 'SampleID',
+      searchField = names(data_raw_calc[[2]]),
+      render = I("{
+      option: function(item, escape) {
+                  return '<div>' +
+                  escape(item.SampleID) + ', ' + escape(item.class) +
+                  '</div>';  
+                  }
+                  }")
+    ))
+  })
+  
+  
+  
+
   
   #### Choix des onglets [OK]
   output$select_sheets <- renderUI({
