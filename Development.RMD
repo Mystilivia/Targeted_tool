@@ -24,9 +24,6 @@ data <- readRDS('./Glucids_App/data/glucids.rds')
 setnames(data[[1]], 1, 'SampleID')
 setnames(data[[2]], 1, 'SampleID')
 setnames(data[[3]], 1, 'VarID')
-data[[1]][,SampleID := as.character(SampleID)]
-data[[2]][,SampleID := as.character(SampleID)]
-data[[3]][,VarID := as.character(VarID)]
 setkeyv(data[[1]], 'SampleID')
 setkeyv(data[[2]], 'SampleID')
 setkeyv(data[[3]], 'VarID')
@@ -42,7 +39,12 @@ test_A <- data.table('SampleID' = 1:20,
                      'Met_A' = round(rnorm(20, 5, 1), 2), 
                      'Met_B' = round(rnorm(20, 0.5, 0.1), 2),
                      'Met_C' = round(rnorm(20, 10, 1), 2))
-setkeyv(test_A, 'ID')
+setkeyv(test_A, 'SampleID')
+
+data <- list("datamatrix" = test_A[,c(1,4:6)],
+             "samplemetadata" = data.table(test_A[,1:3], 'MS' = rnorm(20, 10, 1)),
+             "variablemetadata" = data.table('VarID' = c("Met_A", "Met_B", "Met_C"), 'class' = c("Glucide", "SI", "Glucide"), 'conc' = c(100,100,100))
+)
 
 ## Using data.table only [Faster]
 data_DT <- function(x) {
@@ -55,18 +57,18 @@ data_DT <- function(x) {
     temp.calc <- cbind(x[,1:3], temp.calc)
     return(temp.calc)
   })
-  return(do.call(rbind, temp)[order(batch, ID)])
+  return(do.call(rbind, temp)[order(batch, SampleID)])
 }
 data_DT(test_A)
 
 ## Using melting and dcast [SLOWER]
 data_merge <- function(x) {
-  temp.L <- melt(x, id.vars = c('ID', 'batch', 'class'))
+  temp.L <- melt(x, id.vars = c('SampleID', 'batch', 'class'))
   temp <- temp.L[class == 'standard', .(Conc = mean(value)), by = c('batch', 'class', 'variable')]
   temp <- merge(temp.L, temp[,-c('class')], by = c('batch', 'variable'))
   temp <- temp[, Calculated := value * Conc]
-  temp <- dcast(temp, ID+batch+class~variable, value.var = 'Calculated')
-  return(temp[order(batch, ID)])
+  temp <- dcast(temp, SampleID+batch+class~variable, value.var = 'Calculated')
+  return(temp[order(batch, SampleID)])
 }
 data_merge(test_A)
 
@@ -74,10 +76,7 @@ data_merge(test_A)
 ```
 
 ```{r v2}
-data <- list("datamatrix" = test_A[,c(1,4:6)],
-             "samplemetadata" = data.table(test_A[,1:3], 'MS' = rnorm(20, 10, 1)),
-             "variablemetadata" = data.table('VarID' = c("Met_A", "Met_B", "Met_C"), 'class' = c("Glucide", "SI", "Glucide"), 'conc' = c(100,100,100))
-)
+
 #################
 data_DT <- function(x) {
   # x <- data
@@ -97,14 +96,14 @@ data_DT <- function(x) {
   )
 }
 ####
-data_Rdmt <- function(x) {
+data_Rdmt <- function(x, conc_SI, dilution_fac) {
   # x <- data
   y <- merge(x[[2]][,.(SampleID, batch, class)], x[[1]], by = 'SampleID')
   col_sel <- x[[3]][class == "SI", VarID]
   temp <- lapply(split(y[,c('SampleID', 'batch', 'class', col_sel), with = F], by = 'batch'), function(w) {
     # w <- split(y[,c('SampleID', 'batch', 'class', col_sel), with = F], by = 'batch')[[1]]
     temp.STD.SI <- w[class == 'standard', mean(get(col_sel), na.rm = T)]/x[[3]][VarID == col_sel, conc]
-    temp.SPL.SI <- w[class == 'sample', get(col_sel)/input$conc_SI/input$dilution_fac]
+    temp.SPL.SI <- w[class == 'sample', get(col_sel)/conc_SI/dilution_fac]
     w[class == 'sample', Rdmt := temp.SPL.SI/temp.STD.SI]
     return(w)
   })
@@ -119,18 +118,23 @@ data_Rdmt <- function(x) {
 #####
 
 #################
+input = list('vol_extraction' = 600,
+             'dilution_fac' = 2,
+             'Mass_col' = 'MS',
+             'unit_Mass' = 'mg de MS',
+             'unit_SI' = 'µM',
+             'sample_choice_1' = data[[1]][1, SampleID],
+             'Conc_SI' = 100)
+
 data_conc <- eventReactive(input$submit_data_calc, {
   disable(id = 'submit_data_calc')
   on.exit(enable(id = 'submit_data_calc'))
   data <- req(dataset_keyed())
   isolate({
-    data_calc_step1 <- data_DT(data_Rdmt(data))
-    validate(need(identical(temp.datamatrix.amount[,1], data[[2]][,1]), "Problème dans la fonction 'data_conc', contacter le développeur."),
+    data_calc_step1 <- data_DT(data_Rdmt(data, input$Conc_SI, input$dilution_fac))
+    validate(need(identical(data_calc_step1[[1]][,1], data_calc_step1[[2]][,1]), "Problème dans la fonction 'data_conc', contacter le développeur."),
              need(!is.null(input$vol_extraction), "Entrer un volume d'extraction"),
-             need(!is.numeric(input$vol_extraction), "Entrer un chiffre pour le volume d'extraction"),
-             need(!is.null(input$dilution_fac), "Entrer un facteur de dilution"),
-             need(!is.numeric(input$dilution_fac), "Entrer un chiffre pour le facteur de dilution"),
-             need(!is.numeric(input$Mass_col), "Choisissez une colonne contenant les masses de départ"))
+             need(!is.null(input$dilution_fac), "Entrer un facteur de dilution"))
     Col_sel <- names(data_calc_step1[[1]])[-1]
     Fact_corr <- 1000/req(input$vol_extraction)/req(input$dilution_fac)
     data_calc_step1[[1]][, (Col_sel) := lapply(.SD, function(x) {x/data_calc_step1[[2]][,get(req(input$Mass_col))]*Fact_corr}), .SDcols = Col_sel]
@@ -139,6 +143,44 @@ data_conc <- eventReactive(input$submit_data_calc, {
   # conc_X.Ec3 <- (((Resp_X.Ec)*(Conc_X.St)) / (Resp_X.St))
   # conc_X.Ec3 <- conc_X.Ec3 / ((Resp_IS.Ec/Conc_IS.Ec)/(Resp_IS.St/Conc_IS.St))
 })
+
+
+#### PLOT
+# data_calc_temp_plot <- data_calc_step1
+data_calc_temp_plot <- req(data_conc2())
+mass_unit_val <- req(input$unit_Mass)
+SE_unit_val <- req(input$unit_SI)
+temp.plot.data <- melt(merge(data_calc_temp_plot[[2]], data_calc_temp_plot[[1]], by = 'SampleID'), id.vars = names(data_calc_temp_plot[[2]]))
+SI_val <- (data_calc_temp_plot[[3]][class == "SI", VarID])
+return(list('data.plot' = temp.plot.data,
+            'mass_unit_val' = mass_unit_val,
+            'SE_unit_val' = SE_unit_val,
+            'SI_val' = SI_val))
+######
+  output$data_calc_SI_plot <- renderPlot({
+    temp.plot <- req(data_conc_raw_plot())
+    temp.plot.sub <- temp.plot$data.plot[class == 'sample' & variable %in% temp.plot$SI_val]
+    title_label <- paste0("Variation du standard dans les échantillons (", temp.plot$SI_val, ")")
+    ggplot(temp.plot.sub, aes(reorder(SampleID, batch), value, fill = as.factor(batch))) +
+      geom_bar(stat = 'identity', position = position_dodge(width=0.9), color = 'black') +
+      theme_bw() +
+      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+      labs(title = title_label, x = "", y = paste0("en ", temp.plot$SE_unit_val, " / ", temp.plot$mass_unit_val))
+  })
+####
+  output$data_calc <- renderPlot({
+    samples_selection <- req(input$sample_choice_1)
+    temp.plot <- req(data_conc_raw_plot())
+    temp.plot.sub <- temp.plot$data.plot[SampleID %in% samples_selection]
+    label_title <- ifelse(length(samples_selection) > 1, paste0("Teneurs dans les échantillons : ", paste(samples_selection, sep = "", collapse = ", ")), paste0("Teneurs dans l'échantillon : ", paste(samples_selection)))
+    ggplot(temp.plot.sub, aes(variable, value, fill = SampleID)) +
+      geom_bar(stat = 'identity', position = position_dodge(width=0.9), color = 'black') +
+      theme_bw() +
+      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+      labs(title = label_title, subtitle = "Données non-normalisées", x = "", y = paste0("en ", temp.plot$SE_unit_val, " / ", temp.plot$mass_unit_val))
+  })
+
+
 ```
 
 ```{r v1}

@@ -42,8 +42,8 @@ dashboardPage(
   dashboardSidebar(
     sidebarMenu(
       menuItem("1 - Données",     tabName = "data",       icon = icon('database'),       badgeLabel = "In test",     badgeColor = "blue", selected = T),
-      menuItem("2 - Calculs",     tabName = "calculs",    icon = icon('tasks'),          badgeLabel = "In progress", badgeColor = "orange"),
-      menuItem("3 - Corrections", tabName = "correction", icon = icon('check-square-o'), badgeLabel = "In project",  badgeColor = "red"),
+      menuItem("2 - Calculs",     tabName = "calculs",    icon = icon('tasks'),          badgeLabel = "In test", badgeColor = "blue"),
+      menuItem("3 - Corrections", tabName = "correction", icon = icon('check-square-o'), badgeLabel = "In dev",  badgeColor = "orange"),
       menuItem("4 - Analyses",    tabName = "analysis",   icon = icon('bar-chart'),      badgeLabel = "In project",  badgeColor = "red")
     ),
     hr(),
@@ -134,22 +134,35 @@ dashboardPage(
                           ),
 
                           column(width = 8,
-                                 box(width = 12,
+                                 box(width = 6,
                                      title= "Graphique", solidHeader = T, status = 'primary',
-                                     selectizeInput('sample_choice_1', label = 'Echantillon(s)', choices = '', multiple = T, width = '50%'),
-                                     plotOutput('data_calc', width = "auto", height = "300px")
+                                     selectizeInput('sample_choice_1', label = 'Choisisser un ou plusieurs échantillons :', choices = '', multiple = T, width = '75%'),
+                                     plotlyOutput('data_calc', width = "auto", height = "auto")
                                  ),
-                                 box(width = 12,
-                                     title = "Variation des standards internes dans les échantillons", solidHeader = T, status = 'primary',
-                                     plotOutput("data_calc_SI_plot", width = "auto", height = "300px")
-                                   )
-                            )
+                                 box(width = 6,
+                                     title = "Rendements d'extractions", solidHeader = T, status = 'primary',
+                                     selectizeInput('batch_choice_1', label = 'Choisissez un ou plusieurs batchs :', choices = '', multiple = T, width = '75%'),
+                                     plotlyOutput("data_calc_Rmdt_plot", width = "auto", height = "auto")
+                                 )
+                          )
                   ),
                   #################################################
                   tabItem(tabName = "correction",
-                          h3("Appliquer une correction des données"),
-                          box(width = 8, solidHeader = T, status = 'primary',
-                             plotOutput('SI_raw_plot', height='250px')
+                          box(width = 4, title = "Appliquer une correction des données", solidHeader = T, status = 'primary',
+                              h4("Normaliser par rapport à un standard interne (SI)"),
+                              fluidRow(
+                                column(6,
+                                       p("Prérequis :"),
+                                       p("Standard Interne :"),
+                                       p("Batch :")
+                                ),
+                                column(6,
+                                       column(width = 4, actionButton('submit_data_correction', 'Valider', icon = icon('check')))
+                                       )
+                              ),
+                              hr(),
+                              h4("Corriger la déviation analytique"),
+                              hr()
                           )
                   ),
                   #################################################

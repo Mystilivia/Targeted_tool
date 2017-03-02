@@ -18,6 +18,7 @@ library(ggplot2)
 library(readxl)
 library(markdown)
 library(curl)
+library(plotly)
 
 # from https://github.com/davesteps/machLearn/blob/master/init.R
 label.help <- function(label,id){
@@ -67,14 +68,14 @@ data_DT <- function(x) {
   )
 }
 ####
-data_Rdmt <- function(x) {
+data_Rdmt <- function(x, conc_SI, dilution_fac) {
   # x <- data
   y <- merge(x[[2]][,.(SampleID, batch, class)], x[[1]], by = 'SampleID')
   col_sel <- x[[3]][class == "SI", VarID]
   temp <- lapply(split(y[,c('SampleID', 'batch', 'class', col_sel), with = F], by = 'batch'), function(w) {
     # w <- split(y[,c('SampleID', 'batch', 'class', col_sel), with = F], by = 'batch')[[1]]
     temp.STD.SI <- w[class == 'standard', mean(get(col_sel), na.rm = T)]/x[[3]][VarID == col_sel, conc]
-    temp.SPL.SI <- w[class == 'sample', get(col_sel)/input$conc_SI/input$dilution_fac]
+    temp.SPL.SI <- w[class == 'sample', get(col_sel)/conc_SI/dilution_fac]
     w[class == 'sample', Rdmt := temp.SPL.SI/temp.STD.SI]
     return(w)
   })
@@ -86,7 +87,6 @@ data_Rdmt <- function(x) {
               'variablemetadata' = x[[3]])
   )
 }
-#####
 ####################################################
 
 
@@ -146,9 +146,6 @@ shinyServer(function(input, output, session) {
       setnames(data[[1]], 1, 'SampleID')
       setnames(data[[2]], 1, 'SampleID')
       setnames(data[[3]], 1, 'VarID')
-      data[[1]][,SampleID := as.character(SampleID)]
-      data[[2]][,SampleID := as.character(SampleID)]
-      data[[3]][,VarID := as.character(VarID)]
       setkeyv(data[[1]], 'SampleID')
       setkeyv(data[[2]], 'SampleID')
       setkeyv(data[[3]], 'VarID')
@@ -267,99 +264,93 @@ shinyServer(function(input, output, session) {
   data_conc2 <- eventReactive(input$submit_data_calc, {
     disable(id = 'submit_data_calc')
     on.exit(enable(id = 'submit_data_calc'))
+    cat(file=stderr(), "data_conc2 : Validation", "\n")
     data <- req(dataset_keyed())
+    conc_SI <- as.numeric(req(input$conc_SI))
+    dilution_vac <- as.numeric(req(input$dilution_fac))
     isolate({
-      data_calc_step1 <- data_DT(data_Rdmt(data))
+      cat(file=stderr(), "data_conc2 : Starting calculation 1", "\n")
+      data_calc_step1 <- data_DT(data_Rdmt(data, conc_SI, dilution_vac))
+      cat(file=stderr(), "data_conc2 : Starting calculation Validation step", "\n")
+      
       validate(need(identical(data_calc_step1[[1]][,1], data_calc_step1[[2]][,1]), "Problème dans la fonction 'data_conc2', contacter le développeur."),
                need(!is.null(input$vol_extraction), "Entrer un volume d'extraction"),
-               need(!is.numeric(input$vol_extraction), "Entrer un chiffre pour le volume d'extraction"),
                need(!is.null(input$dilution_fac), "Entrer un facteur de dilution"),
-               need(!is.numeric(input$dilution_fac), "Entrer un chiffre pour le facteur de dilution"),
-               need(!is.numeric(input$Mass_col), "Choisissez une colonne contenant les masses de départ"))
+               need(!is.null(input$Mass_col), "Choisissez une colonne contenant les masses de départ"))
+      cat(file=stderr(), "data_conc2 : Requirement 2", "\n")
       Col_sel <- names(data_calc_step1[[1]])[-1]
-      Fact_corr <- 1000/req(input$vol_extraction)/req(input$dilution_fac)
-      data_calc_step1[[1]][, (Col_sel) := lapply(.SD, function(x) {x/data_calc_step1[[2]][,get(req(input$Mass_col))]*Fact_corr}), .SDcols = Col_sel]
+      Fact_corr <- 1000/req(as.numeric(input$vol_extraction)/req(as.numeric(input$dilution_fac)))
+      Mass_sel <- as.character(req(input$Mass_col))
+      cat(file=stderr(), "data_conc2 : Starting calculation 2", "\n")
+      data_calc_step1[[1]][, (Col_sel) := lapply(.SD, function(x) {x/data_calc_step1[[2]][,get(Mass_sel)]*Fact_corr}), .SDcols = Col_sel]
+      cat(file=stderr(), "data_conc2 : Calculation finished", "\n")
       return(data_calc_step1)
-    })
+      })
     # conc_X.Ec3 <- (((Resp_X.Ec)*(Conc_X.St)) / (Resp_X.St))
     # conc_X.Ec3 <- conc_X.Ec3 / ((Resp_IS.Ec/Conc_IS.Ec)/(Resp_IS.St/Conc_IS.St))
   })
-  
-  
-  data_conc <- eventReactive(input$submit_data_calc, {
-    disable(id = 'submit_data_calc')
-    on.exit(enable(id = 'submit_data_calc'))
-    data <- req(dataset_keyed())
-    isolate({
-      SI_val <- as.character(data[[3]][class == 'SI', 1])
-      ## calculate sample amount
-      temp.datamatrix <- merge(data[[2]][,.(SampleID, batch, class)], data[[1]], by = 'SampleID')
-      batch.list <- split(temp.datamatrix, by = c('batch', 'class'), flatten = F)
-      temp.std <- lapply(batch.list, function(x) {t(x$standard[,-c(1:3)][, lapply(.SD, function(x) {mean(x, na.rm = T)})])})
-      temp.respF <- lapply(temp.std, function(x) {x/data[[3]][,conc]})
-      temp.list.val <- mapply(function(x,y) {lapply(x, function(z) t(z[,-c(1:3)])/y[,1])}, batch.list, temp.respF, SIMPLIFY = F)
-      temp.list.val <- mapply(function(x,y) {mapply(function(z,w) {cbind(z[,1:3], t(w))}, x, y, SIMPLIFY = F)}, batch.list, temp.list.val, SIMPLIFY = F)
-      temp.datamatrix.amount <- as.data.table(do.call(rbind, lapply(temp.list.val, function(x) do.call(rbind, x))), keep.rownames = F)[,-c('batch', 'class')]
-      temp.datamatrix.amount <- temp.datamatrix.amount[,SampleID := as.character(SampleID)]
-      #divide by ms and calculate amount in extraction volume
-      temp.datamatrix.amount <- temp.datamatrix.amount[,SampleID := as.character(SampleID)]
-      setkeyv(temp.datamatrix.amount, "SampleID")
-
-      validate(need(identical(temp.datamatrix.amount[,1], data[[2]][,1]), "Problème dans la fonction 'data_conc', contacter le développeur."),
-               need(!is.null(input$vol_extraction), "Entrer un volume d'extraction"),
-               need(!is.numeric(input$vol_extraction), "Entrer un chiffre pour le volume d'extraction"),
-               need(!is.null(input$dilution_fac), "Entrer un facteur de dilution"),
-               need(!is.numeric(input$dilution_fac), "Entrer un chiffre pour le facteur de dilution"),
-               need(!is.numeric(input$Mass_col), "Choisissez une colonne contenant les masses de départ"))
-      # input <- list()
-      # input$vol_extraction <- 600
-      # input$Mass_col <- "MS"
-      # input$conc_SI <- 100
-      # input$dilution_fac <- 2
-      temp.datamatrix <- cbind(temp.datamatrix.amount[,1], (((temp.datamatrix.amount[,-1]/data[[2]][,get(as.character(input$Mass_col))])*1000/as.numeric(input$vol_extraction))/as.numeric(input$dilution_fac)))
-      return(list('datamatrix' = temp.datamatrix,
-                  'samplemetadata' = data[[2]],
-                  'variablemetadata' = data[[3]]))
-    })
-    # conc_X.Ec3 <- (((Resp_X.Ec)*(Conc_X.St)) / (Resp_X.St))
-    # conc_X.Ec3 <- conc_X.Ec3 / ((Resp_IS.Ec/Conc_IS.Ec)/(Resp_IS.St/Conc_IS.St))
-  })
-  
-  output$data_calc <- renderPlot({
-    samples_selection <- req(input$sample_choice_1)
-    temp.plot <- req(data_conc_raw_plot())
-    temp.plot.sub <- temp.plot$data.plot[SampleID %in% samples_selection]
-    label_title <- ifelse(length(samples_selection) > 1, paste0("Teneurs dans les échantillons : ", paste(samples_selection, sep = "", collapse = ", ")), paste0("Teneurs dans l'échantillon : ", paste(samples_selection)))
-    ggplot(temp.plot.sub, aes(variable, value, fill = SampleID)) +
-      geom_bar(stat = 'identity', position = position_dodge(width=0.9), color = 'black') +
-      theme_bw() +
-      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
-      labs(title = label_title, subtitle = "Données non-normalisées", x = "", y = paste0("en ", temp.plot$SE_unit_val, " / ", temp.plot$mass_unit_val))
-  })
-  
   
   ########### SI stability in samples + overall CV [DEV]
   data_conc_raw_plot <- reactive({
+    cat(file=stderr(), "data_conc_raw_plot : Requirement", "\n")
     data_calc_temp_plot <- req(data_conc2())
     mass_unit_val <- req(input$unit_Mass)
     SE_unit_val <- req(input$unit_SI)
+    cat(file=stderr(), "data_conc_raw_plot : Data formating", "\n")
     temp.plot.data <- melt(merge(data_calc_temp_plot[[2]], data_calc_temp_plot[[1]], by = 'SampleID'), id.vars = names(data_calc_temp_plot[[2]]))
     SI_val <- req(dataset_checker()[[13]]$value)
+    cat(file=stderr(), "data_conc_raw_plot : Finished", "\n")
     return(list('data.plot' = temp.plot.data,
                 'mass_unit_val' = mass_unit_val,
                 'SE_unit_val' = SE_unit_val,
                 'SI_val' = SI_val))
   })
   
-  output$data_calc_SI_plot <- renderPlot({
+  ###### PLOT SI
+  output$data_calc <- renderPlotly({
+    #cat(file=stderr(), "data_calc : Requirement", "\n")
+    samples_selection <- req(input$sample_choice_1)
     temp.plot <- req(data_conc_raw_plot())
-    temp.plot.sub <- temp.plot$data.plot[class == 'sample' & variable %in% temp.plot$SI_val]
-    title_label <- paste0("Variation du standard dans les échantillons (", temp.plot$SI_val, ")")
-    ggplot(temp.plot.sub, aes(reorder(SampleID, batch), value, fill = as.factor(batch))) +
-      geom_bar(stat = 'identity', position = position_dodge(width=0.9), color = 'black') +
-      theme_bw() +
-      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
-      labs(title = title_label, x = "", y = paste0("en ", temp.plot$SE_unit_val, " / ", temp.plot$mass_unit_val))
+    #cat(file=stderr(), "data_calc : subsetting", "\n")
+    temp.plot.sub <- temp.plot$data.plot[SampleID %in% samples_selection]
+    label_title <- ifelse(length(samples_selection) > 1, paste0("Teneurs dans les échantillons : ", paste(samples_selection, sep = "", collapse = ", ")), paste0("Teneurs dans l'échantillon : ", paste(samples_selection)))
+    #cat(file=stderr(), "data_calc : plot", "\n")
+    return(
+      ggplotly(ggplot(temp.plot.sub, aes(variable, value, fill = as.factor(SampleID), label1 = SampleID)) +
+                 geom_bar(stat = 'identity', position = 'dodge', color = 'black') +
+                 coord_flip() +
+                 theme_bw() +
+                 theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust = 0)) +
+                 labs(title = label_title, subtitle = "Données non-normalisées", x = "", y = paste0("en ", temp.plot$SE_unit_val, " / ", temp.plot$mass_unit_val), fill = "ID"),
+               tooltip = c("SampleID", "variable", "value"), height = 600) %>% config(displayModeBar = F)
+    )
+    #cat(file=stderr(), "data_calc : Finished", "\n")
+  })
+  
+  ###### PLOT PROFILES
+  output$data_calc_Rmdt_plot <- renderPlotly({
+    #cat(file=stderr(), "data_calc_SI_plot : Requirement", "\n")
+    temp.plot <- req(data_conc_raw_plot())
+    batch_selection <- req(input$batch_choice_1)
+    #cat(file=stderr(), "data_calc_SI_plot : Subsetting", "\n")
+    temp.plot.sub <- temp.plot$data.plot[class == 'sample' & variable %in% temp.plot$SI_val & batch %in% batch_selection]
+    temp.plot.sub[,outliers := ifelse(abs(Rdmt-mean(Rdmt, na.rm = T)) > 2*sd(Rdmt, na.rm = T), "outliers", ""), by = batch]
+    temp.plot.sub <- temp.plot.sub[, SampleID := as.factor(SampleID)][, batch := as.factor(batch)]
+    title_label <- paste0("Rendements d'extraction")
+    #cat(file=stderr(), "data_calc_SI_plot : Plot", "\n")
+    return(
+      ggplotly(ggplot(temp.plot.sub, aes(SampleID, Rdmt, fill = batch, alpha = outliers)) +
+                 geom_hline(yintercept = 1, linetype = 2, alpha = 0.4) +
+                 geom_bar(stat = 'identity', position = 'dodge', color = 'black') +
+                 coord_flip() +
+                 scale_alpha_discrete('outliers', range = c(0.2,1)) +
+                 theme_bw() +
+                 theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust = 0)) +
+                 labs(title = title_label, x = "", y = "", fill = "batchs") +
+                 guides(alpha = FALSE),
+               tooltip = c("SampleID", "Rdmt"), height = 600) %>% config(displayModeBar = F)
+    )
+    #cat(file=stderr(), "data_calc_SI_plot : Finished", "\n")
   })
   
   #### Calculate SI deviation in samples (or show SI levels in barplot)
@@ -378,8 +369,7 @@ shinyServer(function(input, output, session) {
   ############################### OUTPUT ###############################
   observe({
     data_raw_calc <- req(data_conc2())
-    data_raw_calc_choice <- data_raw_calc[[2]][,SampleID]
-    updateSelectizeInput(session, 'sample_choice_1', choices = data_raw_calc[[2]], selected = data_raw_calc_choice[1], server = T, options = list(
+    updateSelectizeInput(session, 'sample_choice_1', choices = data_raw_calc[[2]][class != 'standard'], selected = data_raw_calc[[2]][class == "sample", SampleID][1], server = T, options = list(
       placeholder = 'Choisissez un ou plusieurs échantillons',
       valueField = 'SampleID',
       labelField = 'SampleID',
@@ -392,6 +382,7 @@ shinyServer(function(input, output, session) {
                   }
                   }")
     ))
+    updateSelectizeInput(session, 'batch_choice_1', choices = data_raw_calc[[2]][class != 'standard', batch], selected = data_raw_calc[[2]][class == "sample", batch], server = T)
   })
   
   
