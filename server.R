@@ -9,10 +9,10 @@
 
 
 # Define server logic required to draw a histogram
+source('Helper.R')
+
 shinyServer(function(input, output, session) {
-  source('Helper.R')
-  
-  ################## Data importation ##################
+    ################## Data importation ##################
   data.import <- reactive({
     validate(
       need(file_input_sheets(), "Sélectionnez les feuilles de calculs"),
