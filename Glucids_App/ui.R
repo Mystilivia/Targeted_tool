@@ -13,6 +13,7 @@ library(shinydashboard)
 library(shinyBS)
 library(markdown)
 library(curl)
+library(plotly)
 
 
 # from https://github.com/davesteps/machLearn/blob/master/init.R
@@ -132,38 +133,40 @@ dashboardPage(
                                   column(width = 4, actionButton('submit_data_calc', 'Valider', icon = icon('check')))
                                 )
                           ),
-
+                          
                           column(width = 8,
                                  box(width = 6,
                                      title= "Graphique", solidHeader = T, status = 'primary',
-                                     selectizeInput('sample_choice_1', label = 'Choisisser un ou plusieurs échantillons :', choices = '', multiple = T, width = '75%'),
+                                     selectizeInput('sample_choice_1', label = 'Choisissez un ou plusieurs échantillons :', choices = '', multiple = T, width = '75%'),
                                      plotlyOutput('data_calc', width = "auto", height = "auto")
                                  ),
                                  box(width = 6,
                                      title = "Rendements d'extractions", solidHeader = T, status = 'primary',
-                                     selectizeInput('batch_choice_1', label = 'Choisissez un ou plusieurs batchs :', choices = '', multiple = T, width = '75%'),
+                                     selectizeInput('batch_choice_1', label = label.help('Choisissez un ou plusieurs batchs :', 'outliers_help'), choices = '', multiple = T, width = '75%'),
+                                     bsTooltip('outliers_help', title = "Les outliers sont définis par un écart de 2.5 * la MAD du batch", placement = 'left', trigger = 'hover'),
                                      plotlyOutput("data_calc_Rmdt_plot", width = "auto", height = "auto")
                                  )
                           )
                   ),
                   #################################################
                   tabItem(tabName = "correction",
-                          box(width = 4, title = "Appliquer une correction des données", solidHeader = T, status = 'primary',
+                          box(width = 3, title = "Appliquer une correction des données", solidHeader = T, status = 'primary',
                               h4("Normaliser par rapport à un standard interne (SI)"),
-                              fluidRow(
-                                column(6,
+                                column(12,
                                        p("Prérequis :"),
                                        p("Standard Interne :"),
-                                       p("Batch :")
-                                ),
-                                column(6,
-                                       column(width = 4, actionButton('submit_data_correction', 'Valider', icon = icon('check')))
-                                       )
+                                       p("Batch :"),
+                                       column(width = 4, actionButton('submit_data_correction', 'Valider', icon = icon('check'))),
+                                       column(width = 4, downloadButton('download_data_norm', 'Télécharger', icon = icon('check')))
                               ),
                               hr(),
                               h4("Corriger la déviation analytique"),
                               hr()
-                          )
+                          ),
+                          box(width = 9, title = "Teneurs corrigés", solidHeader = T, status = 'primary',
+                              selectizeInput('sample_choice_2', label = 'Choisissez un ou plusieurs échantillons :', choices = '', multiple = T, width = '75%'),
+                              plotlyOutput('data_calc_norm_plot', width = "auto", height = "auto")
+                              )
                   ),
                   #################################################
                   tabItem(tabName = "analysis",

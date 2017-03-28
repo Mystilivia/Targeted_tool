@@ -75,6 +75,101 @@ data_merge(test_A)
 
 ```
 
+```{r}
+############ 
+data_DT <- function(x) {
+  # x <- data ; 
+  y <- merge(x[[2]][,.(SampleID, batch, class)], x[[1]], by = 'SampleID')
+  col_sel <- names(x[[1]])[-1]
+  temp.list <- lapply(split(y, by = 'batch'), function(w) {
+    # w <- split(y, by = 'batch')[[1]]
+    temp.std.respF <- w[class == 'standard', lapply(.SD, function(v) {mean(v, na.rm = T)}), .SDcols = col_sel]/x[[3]][,conc]
+    temp.calc <- w[, (col_sel) := mapply(function(y,z){y/z}, .SD, temp.std.respF, SIMPLIFY = F), .SDcols = col_sel]
+    return(list("Results" = temp.calc,
+                "respF" = data.table("batch" = paste0("RF_", w[,unique(batch)]), temp.std.respF))
+                )
+  })
+  temp.calc <- do.call(rbind, sapply(temp.list,`[`,1))[order(batch, SampleID)]
+  temp.rf <- t(data.frame(do.call(rbind, sapply(temp.list,`[`,2))[order(batch)], row.names = T))
+  setkeyv(temp.calc, 'SampleID')
+  return(list('datamatrix' = temp.calc[,-c('batch', 'class')],
+              'samplemetadata' = x[[2]],
+              'variablemetadata' = data.table(x[[3]], temp.rf))
+  )
+}
+
+############
+data_Rdmt <- function(x, conc_SI, dilution_fac) {
+  # x <- data
+  y <- merge(x[[2]][,.(SampleID, batch, class)], x[[1]], by = 'SampleID')
+  
+  col_sel <- x[[3]][class == "SI", VarID]
+  temp <- lapply(split(y[,c('SampleID', 'batch', 'class', col_sel), with = F], by = 'batch'), function(w) {
+    # w <- split(y[,c('SampleID', 'batch', 'class', col_sel), with = F], by = 'batch')[[1]]
+    temp.STD.SI <- w[class == 'standard', mean(get(col_sel), na.rm = T)]/x[[3]][VarID == col_sel, conc]
+    temp.SPL.SI <- w[class == 'sample', get(col_sel)/conc_SI/dilution_fac]
+    w[class == 'sample', Rdmt := temp.SPL.SI/temp.STD.SI]
+    return(w)
+  })
+  temp <- do.call(rbind, temp)[order(batch, SampleID)]
+  temp.sple <- merge(x[[2]], temp[,.(SampleID, Rdmt)], by = 'SampleID')
+  setkeyv(temp.sple, 'SampleID')
+  return(list('datamatrix' = x[[1]],
+              'samplemetadata' = temp.sple,
+              'variablemetadata' = x[[3]])
+  )
+}
+############
+data_SI <- function(data.calc) {
+  #x <- data_Rdmt(data, 100, 1)
+  x <- data.calc
+  x[[2]] <- x[[2]][class == "sample"]
+  x[[1]] <- x[[1]][SampleID %in% x[[2]][, SampleID]]
+  x[[1]] <- data.table(x[[1]][,.(SampleID)], x[[1]][,-1]/x[[2]][,Rdmt])
+  return(x)
+}
+# data_SI(data_Rdmt(data, 100, 1))
+###################################
+data_Rdmt(data_DT(data), 42.9, 0.5)
+
+```
+
+```{r RealDataTest}
+data.import <- function(path){
+  data.file <- path
+  temp.list <- list("datamatrix" = setDT(readxl::read_excel(data.file, sheet = 1)),
+                    "samplemetadata" = setDT(readxl::read_excel(data.file, sheet = 2)),
+                    "variablemetadata" = setDT(readxl::read_excel(data.file, sheet = 3))
+  )
+  if (!'batch' %in% names(temp.list[[2]])) {temp.list[[2]] <- temp.list[[2]][,batch := 1]}
+  return(temp.list)
+}
+
+dataset_keyed <- function(data) {
+      setnames(data[[1]], 1, 'SampleID')
+      setnames(data[[2]], 1, 'SampleID')
+      setnames(data[[3]], 1, 'VarID')
+      setkeyv(data[[1]], 'SampleID')
+      setkeyv(data[[2]], 'SampleID')
+      setkeyv(data[[3]], 'VarID')
+      setcolorder(data[[1]], c('SampleID', data[[3]][,VarID]))
+      Mass_col_pre <- ifelse('MS' %in% names(data[[2]]), 'MS',
+                             ifelse('MF' %in% names(data[[2]]), 'MF', names(data[[2]])[1]))
+      return(data)
+}
+
+data.inputed <- data.import("C:/00Data/00Work/24_These_2014/03_These/R_Statistics/02_Help/10.Elise_Metabo/fichiers bruts/1_21.xlsx")
+data.formated <- dataset_keyed(data.inputed)
+temp <- data_DT(data.formated)
+temp <- data_Rdmt(temp, 42.9, 0.5)
+### ### ### ### ###
+data.norm <- data_SI(temp)
+###
+temp.plot.data <- melt(merge(data.norm[[2]], data.norm[[1]], by = 'SampleID'), id.vars = 1:dim(data.norm[[2]])[2])
+```
+
+
+
 ```{r v2}
 
 #################
