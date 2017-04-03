@@ -12,7 +12,11 @@
 source('Helper.R')
 
 shinyServer(function(input, output, session) {
-    ################## Data importation ##################
+  ################## Data importation ##################
+  shinyjs::disable('submit_data_calc')
+  shinyjs::disable('download_data_norm')
+  shinyjs::disable('submit_data_correction')
+  
   data.import <- reactive({
     validate(
       need(file_input_sheets(), "Sélectionnez les feuilles de calculs"),
@@ -33,7 +37,7 @@ shinyServer(function(input, output, session) {
     if (!'batch' %in% names(temp.list[[2]])) {temp.list[[2]] <- temp.list[[2]][,batch := 1]}
     return(temp.list)
   })
-  ######
+  ###############################################
   file_input_sheets <- reactive({
     req(input$dataset)
     if (input$dataset != 'Importer un fichier') {return(NULL)}
@@ -44,20 +48,18 @@ shinyServer(function(input, output, session) {
     temp <- readxl::excel_sheets(paste0(data$datapath, '.xlsx'))
     return(setNames(as.list(1:length(temp)), temp))
   })
-  ######
+  ###############################################
   dataset <- eventReactive(input$submit_data, {
     disable(id = 'submit_data')
     on.exit(enable(id = 'submit_data'))
     dataset_choice <- req(input$dataset)
     if (dataset_choice == 'Aucun') {return(NULL)}
-    if (dataset_choice == 'Glucides (GC-FID)') {return(data.exemple1)}
-    if (dataset_choice == 'Acides aminés (UPLC-DAD)') {return(data.exemple2)}
+    if (dataset_choice == 'Glucides (GC-FID)') {return(test.data.gc())}
+    if (dataset_choice == 'Acides aminés (UPLC-DAD)') {return(test.data.aa())}
     if (dataset_choice == 'Importer un fichier') {data.imported <- req(data.import()) ; return(data.imported)}
     else {return(NULL)}
   }, ignoreNULL = F)
-  
-  ######
-  
+  ###############################################
   dataset_keyed <- reactive({
     data <- req(dataset())
     status <- req(dataset_checker())
@@ -75,72 +77,22 @@ shinyServer(function(input, output, session) {
       return(data)
     } else {return(NULL)}
   })
-  
-  
   ######################################################
    #### common check #### [OK]
    dataset_checker <- reactive({
-     status_list <- rep(list(list('status' = "primary", 'value' = 0, 'message' = NULL)), 14)
      data <- dataset()
-     if (is.null(data)) {
-       status_list[[1]] <- list('status' = "warning", 'value' = NA, 'message' = 'Aucune données compatible chargées.')
-     } else {
-       ## Importation ok
-       status_list[[1]] <- list('status' = 'success', 'value' = NA, 'message' = NULL)
-       ## Check datamatrix as only values
-       if (any(data[[1]][,-1][,lapply(.SD, is.numeric)] == F)) {
-         status_list[[2]] <- list('status' = 'danger',
-                                  'value' = names(data[[1]])[which(data[[1]][,lapply(.SD, is.numeric)] == F)],
-                                  'message' = "Le feuillet 1 comprends du texte ou des caractères spéciaux. Vérifier l'absence de 'NA' 'Nan' 'nd' 'espaces' ','.")
-       } else {status_list[[2]] <- list('status' = 'success', 'value' = NA, 'message' = NULL)}
-       ## Check duplicates in (1) or (2) or (3)
-       if(any(duplicated(data[[1]][,1]) == T)) {
-         status_list[[3]] <- list('status' = 'danger', 'value' = data[[1]][duplicated(),1][[1]], 'message' = "Certains échantillons sont dupliqués dans l'onglet (1)")
-       } else {status_list[[3]] <- list('status' = 'success', 'value' = NA, 'message' = NULL)}
-       if(any(duplicated(data[[2]][,1]) == T)) {
-         status_list[[4]] <- list('status' = 'danger', 'value' = data[[2]][duplicated(),1][[1]], 'message' = "Certains échantillons sont dupliqués dans l'onglet (2)")
-       } else {status_list[[4]] <- list('status' = 'success', 'value' = NA, 'message' = NULL)}
-       if(any(duplicated(data[[3]][,1]) == T)) {
-         status_list[[5]] <- list('status' = 'danger', 'value' = data[[3]][duplicated(),1][[1]], 'message' = "Certains échantillons sont dupliqués dans l'onglet (3)")
-       } else {status_list[[5]] <- list('status' = 'success', 'value' = NA, 'message' = NULL)}
-       ## Check consistency in (1) (2) and (1) (3)
-       if(!identical(data[[1]][,1], data[[2]][,1])) {
-         status_list[[6]] <- list('status' = 'danger', 'value' = NA, 'message' = "La première colonne de l'onglet (1) doit être identique à celle de l'onglet (2)")
-       } else {status_list[[6]] <- list('status' = 'success', 'value' = NA, 'message' = NULL)}
-       if(any(names(data[[1]][,-1]) %in% data[[3]][,1][[1]] == F)) {
-         status_list[[7]] <- list('status' = 'danger', 'value' = NA, 'message' = "Les noms de variables de l'onglet (1) ne sont pas présent dans l'onglet (3)")
-       } else {status_list[[7]] <- list('status' = 'success', 'value' = NA, 'message' = NULL)
-       if(!identical(data[[3]][,1][[1]], names(data[[1]][,-1]))) {
-         status_list[[8]] <- list('status' = 'danger', 'value' = 0, 'message' = "Les noms de variables de l'onglet (1) ne sont pas dans le même ordre que dans l'onglet (3)")
-       } else {status_list[[8]] <- list('status' = 'success', 'value' = data[[3]][,.N], 'message' = NULL)}
-       if(!'class' %in% names(data[[2]])) {
-         status_list[[9]] <- list('status' = 'danger', 'value' = NA, 'message' = "Il n'y a pas de colonne 'class' dans l'onglet (2)")
-       } else {status_list[[9]] <- list('status' = 'success', 'value' = NA, 'message' = NULL)
-       if(!'standard' %in% data[[2]][,class]) {
-         status_list[[10]] <- list('status' = 'danger', 'value' = 0, 'message' = "Il n'y a pas de 'standard' dans l'onglet (2)")
-       } else {status_list[[10]] <- list('status' = 'success', 'value' = data[[2]][class == 'standard', .N], 'message' = NULL)
-       if(!'sample' %in% data[[2]][,class]) {
-         status_list[[11]] <- list('status' = 'danger', 'value' = 0, 'message' = "Il n'y a pas de 'sample' dans l'onglet (2)")
-       } else {status_list[[11]] <- list('status' = 'success', 'value' = data[[2]][class == 'sample', .N], 'message' = NULL)}}}
-       if(!'class' %in% names(data[[3]])) {
-         status_list[[12]] <- list('status' = 'danger', 'value' = NA, 'message' = "Il n'y a pas de colonne 'class' dans l'onglet (3)")
-       } else {status_list[[12]] <- list('status' = 'success', 'value' = NA, 'message' = NULL)
-       if(!'SI' %in% data[[3]][,class]) {
-         status_list[[13]] <- list('status' = 'warning', 'value' = 0, 'message' = "Il n'y a pas de 'SI' dans l'onglet (3)")
-       } else {status_list[[13]] <- list('status' = 'success', 'value' = data[[3]][class == 'SI', 1][[1]], 'message' = NULL)
-       if(!'batch' %in% names(data[[2]])) {
-         status_list[[14]] <- list('status' = 'warning', 'value' = 0, 'message' = "Il n'y a pas de colonne 'batch' dans l'onglet (3)")
-       } else {status_list[[14]] <- list('status' = 'success', 'value' = length(unique(data[[2]][, batch])), 'message' = NULL)}}}}}
-     return(status_list)
+     return(check_dlist(data))
    })
   #### Sidebar information [OK]
   output$sidebar_info <- renderUI({
-    status <- dataset_checker()
+    status <- dataset_checker() 
     return(
       list(
         p(paste0("Variables : ", status[[8]]$value)),
         p(paste0("Batchs : ", status[[14]]$value)),
         p(paste0("Echantillons : ", status[[11]]$value)),
+        p(paste0("QC : ", status[[15]]$value)),
+        p(paste0("Blancs : ", status[[16]]$value)),
         p(paste0("Standards externes : ", status[[10]]$value)),
         p(paste0("Standard Interne : ", status[[13]]$value))
       )
@@ -150,14 +102,19 @@ shinyServer(function(input, output, session) {
   output$dataset_check <- renderUI({
     status <- dataset_checker()
     status <- as.data.table(do.call(rbind, status))
-    if(any(status[,status] != "success")) {
-      return(div(status[,message], style = 'color:red'))
+    if(any(!status[,status] %in% c("success", "primary"))) {
+      return(
+        HTML(
+          c("<font color = 'blue'> Warnings :", paste0(c("<br/>", status[status == "warning", message]), collapse = "<br/>")),
+          c("<br/> <font color = 'red'> Danger :", paste0(c("<br/>", status[status == "danger", message]), collapse = "<br/>"))
+        )
+      )
     } else {
       temp <- dataset_keyed()
-      return(div("Tout semble ok !", style = 'color:green'))
-    }
+      shinyjs::enable('submit_data_calc')
+      return(HTML("<font color = 'green'> Tout semble ok !"))
+              }
   })
-  
   ########### CALCULATION TAB ###########
   #### Plot SI in raw datas with error bar by batch and sample class
   SI_raw_data <- reactive({
@@ -182,16 +139,15 @@ shinyServer(function(input, output, session) {
   #### Calculate content in samples with extraction volume, SI concentration and unit
   data_conc2 <- eventReactive(input$submit_data_calc, {
     disable(id = 'submit_data_calc')
-    on.exit(enable(id = 'submit_data_calc'))
+    on.exit(enable('submit_data_correction'))
+    
     cat(file=stderr(), "data_conc2 : Validation", "\n")
     data <- req(dataset_keyed())
     conc_SI <- as.numeric(req(input$conc_SI))
     dilution_vac <- as.numeric(req(input$dilution_fac))
     isolate({
       cat(file=stderr(), "data_conc2 : Starting calculation 1", "\n")
-      
       data_calc_step1 <- data_DT(data_Rdmt(data, conc_SI, dilution_vac))
-      
       cat(file=stderr(), "data_conc2 : Starting calculation Validation step", "\n")
       validate(need(identical(data_calc_step1[[1]][,1], data_calc_step1[[2]][,1]), "Problème dans la fonction 'data_conc2', contacter le développeur."),
                need(!is.null(input$vol_extraction), "Entrer un volume d'extraction"),
@@ -201,23 +157,22 @@ shinyServer(function(input, output, session) {
                )
       cat(file=stderr(), "data_conc2 : Requirement 2", "\n")
       Col_sel <- names(data_calc_step1[[1]])[-1]
-      
       Fact_corr <- req(as.numeric(input$vol_extraction)/1000*req(as.numeric(input$dilution_fac)))
-      
       Mass_sel <- as.character(req(input$Mass_col))
       cat(file=stderr(), "data_conc2 : Starting calculation 2", "\n")
       data_calc_step1[[1]][, (Col_sel) := lapply(.SD, function(x) {x/data_calc_step1[[2]][,get(Mass_sel)]*Fact_corr}), .SDcols = Col_sel]
       cat(file=stderr(), "data_conc2 : Calculation finished", "\n")
+      enable(id = 'submit_data_calc')
       return(data_calc_step1)
       })
-    # conc_X.Ec3 <- (((Resp_X.Ec)*(Conc_X.St)) / (Resp_X.St))
-    # conc_X.Ec3 <- conc_X.Ec3 / ((Resp_IS.Ec/Conc_IS.Ec)/(Resp_IS.St/Conc_IS.St))
+    enable(id = 'submit_data_calc')
   })
   
   #### Correct SI
   data_SI_corrected <- eventReactive(input$submit_data_correction, {
     disable(id = 'submit_data_correction')
     on.exit(enable(id = 'submit_data_correction'))
+    shinyjs::enable('download_data_norm')
     cat(file=stderr(), "data_SI_corrected : Initialize", "\n")
     data_conc2 <- req(data_conc2())
     return(data_SI(data_conc2))
@@ -232,9 +187,7 @@ shinyServer(function(input, output, session) {
     mass_unit_val <- req(input$unit_Mass)
     SE_unit_val <- req(input$unit_SI)
     cat(file=stderr(), "data_conc_raw_plot : Data formating", "\n")
-    
     temp.plot.data <- melt(merge(temp.data[[2]], temp.data[[1]], by = 'SampleID'), id.vars = 1:dim(temp.data[[2]])[2])
-    
     SI_val <- req(dataset_checker()[[13]]$value)
     cat(file=stderr(), "data_conc_raw_plot : Finished", "\n")
     return(list('data.plot' = temp.plot.data,
@@ -364,18 +317,21 @@ shinyServer(function(input, output, session) {
   
   observe({
     data_SI_calc <- req(data_SI_corrected())
-    updateSelectizeInput(session, 'sample_choice_2', choices = data_SI_calc[[2]][class == 'sample'], selected = data_SI_calc[[2]][class == "sample", SampleID][1], server = T, options = list(
+    render.text <- paste0("{ option: function(item, escape) { return '<div>' + ", paste(lapply(names(data_SI_calc[[2]])[1:length(names(data_SI_calc[[2]]))-1], function(x) {paste0("escape(item.", x, ")")}), collapse = " + ', ' + "), " + '</div>';   } }")
+    
+    updateSelectizeInput(session, 'sample_choice_2', choices = data_SI_calc[[2]][class != 'standard'], selected = data_SI_calc[[2]][class == "sample", SampleID][1], server = T, options = list(
       placeholder = 'Choisissez un ou plusieurs échantillons',
       valueField = 'SampleID',
       labelField = 'SampleID',
       searchField = names(data_SI_calc[[2]]),
-      render = I("{
-      option: function(item, escape) {
-                  return '<div>' +
-                  escape(item.SampleID) + ', ' + escape(item.class) +
-                  '</div>';  
-                  }
-                  }")
+      render = I(render.text)
+      # render = I("{
+      # option: function(item, escape) {
+      #             return '<div>' +
+      #             escape(item.SampleID) + ', ' + escape(item.class) +
+      #             '</div>';  
+      #             }
+      #             }")
     ))
   })
   
@@ -399,12 +355,34 @@ shinyServer(function(input, output, session) {
   #### Demonstration data download [OK]
   output$download_exemple1 <- downloadHandler(
     filename = 'Demo_Glucids.xlsx',
-    content = function(file) {download.file('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfVmxtMm1kbG1hRzA', file, mode = 'wb')}
+    # content = function(file) {download.file('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfVmxtMm1kbG1hRzA', file, mode = 'wb')}
+    content = function(file) {
+      temp <- req(test.data.gc())
+      wb = createWorkbook()
+      sheet1 = createSheet(wb, "datamatrix")
+      addDataFrame(temp[[1]], sheet = sheet1, row.names = F)
+      sheet2 = createSheet(wb, "samplemetadata")
+      addDataFrame(temp[[2]], sheet = sheet2, row.names = F)
+      sheet3 = createSheet(wb, "variablemetadata")
+      addDataFrame(temp[[3]], sheet = sheet3, row.names = F)
+      saveWorkbook(wb, file = file)
+    }
   )
   
   output$download_exemple2 <- downloadHandler(
     filename = 'Demo_Amino_acids.xlsx',
-    content = function(file) {download.file('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfMmJjOHlKR3ZXOVk', file, mode = 'wb')}
+    #content = function(file) {download.file('https://drive.google.com/uc?export=download&id=0BzRPQoqAbZxfMmJjOHlKR3ZXOVk', file, mode = 'wb')}
+    content = function(file) {
+      temp <- req(test.data.aa())
+      wb = createWorkbook()
+      sheet1 = createSheet(wb, "datamatrix")
+      addDataFrame(temp[[1]], sheet = sheet1, row.names = F)
+      sheet2 = createSheet(wb, "samplemetadata")
+      addDataFrame(temp[[2]], sheet = sheet2, row.names = F)
+      sheet3 = createSheet(wb, "variablemetadata")
+      addDataFrame(temp[[3]], sheet = sheet3, row.names = F)
+      saveWorkbook(wb, file = file)
+    }
   )
   
   output$download_data_norm <- downloadHandler(

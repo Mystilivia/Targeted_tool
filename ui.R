@@ -36,6 +36,12 @@ dashboardPage(
                                  message = "Import tab v1.0 is working",
                                  icon = icon("info-circle"),
                                  time = "2017-02-21"
+                               ),
+                               messageItem(
+                                 from = "Admin",
+                                 message = "First working version with SI correction",
+                                 icon = icon("info-circle"),
+                                 time = "2017-03-28"
                                )
                   )
   ),
@@ -96,7 +102,7 @@ dashboardPage(
                                 conditionalPanel("input.dataset == 'Importer un fichier'",
                                                  fileInput('file_input', NULL, accept = c(".xls", ".xlsx")),
                                                  conditionalPanel("file_input_sheets > 0",
-                                                                  uiOutput("select_sheets"))
+                                                                  htmlOutput("select_sheets"))
                                 ),
                                 hr(),
                                 actionButton('submit_data', 'Valider', icon = icon('check'))
@@ -117,7 +123,7 @@ dashboardPage(
                                 ),
                                 hr(),
                                 fluidRow(
-                                  column(6, shiny::textInput('conc_SI', label = label.help('[SI] échantillons', 'unit_SI_help'), value = 0.1),
+                                  column(6, shiny::textInput('conc_SI', label = label.help('[SI] échantillons', 'unit_SI_help'), value = 100),
                                   bsTooltip('unit_SI_help', title = 'Utiliser la même unité que pour les standards externes (feuillet (3))', placement = 'right', trigger = 'hover')),
                                   column(6, shiny::textInput('unit_SI', label = 'Unité', value = "µM"))
                                 ),
@@ -153,9 +159,6 @@ dashboardPage(
                           box(width = 3, title = "Appliquer une correction des données", solidHeader = T, status = 'primary',
                               h4("Normaliser par rapport à un standard interne (SI)"),
                                 column(12,
-                                       p("Prérequis :"),
-                                       p("Standard Interne :"),
-                                       p("Batch :"),
                                        column(width = 4, actionButton('submit_data_correction', 'Valider', icon = icon('check'))),
                                        column(width = 4, downloadButton('download_data_norm', 'Télécharger', icon = icon('check')))
                               ),
@@ -163,7 +166,7 @@ dashboardPage(
                               h4("Corriger la déviation analytique"),
                               hr()
                           ),
-                          box(width = 9, title = "Teneurs corrigés", solidHeader = T, status = 'primary',
+                          box(width = 9, title = "Teneurs corrigées", solidHeader = T, status = 'primary',
                               selectizeInput('sample_choice_2', label = 'Choisissez un ou plusieurs échantillons :', choices = '', multiple = T, width = '75%'),
                               plotlyOutput('data_calc_norm_plot', width = "auto", height = "auto")
                               )

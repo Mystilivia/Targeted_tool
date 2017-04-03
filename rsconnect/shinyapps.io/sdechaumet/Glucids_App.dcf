@@ -3,9 +3,9 @@ title: Glucids_App
 account: sdechaumet
 server: shinyapps.io
 appId: 158028
-bundleId: 766648
+bundleId: 766790
 url: https://sdechaumet.shinyapps.io/Glucids_App/
-when: 1490696818.03387
+when: 1490704617.65198
 asMultiple: FALSE
 asStatic: FALSE
-ignoredFiles: data/Aminoacids_vf.xlsx|data/Glucids_vf.xlsx|data/Shiny_test.xlsx
+ignoredFiles: .RData|Data/.gitignore|Data/161116_GENERGY_SylvainD_v0.1.Shyni_test.xlsx|Data/aminoacids.rds|Data/Aminoacids_vf.xlsx|Data/glucids.rds|Data/Glucids_vf.xlsx|Data/Presentation1.pptx|Data/Shiny_test.xlsx|Data/Amino_acids/Aminoacids_vf.xlsx|Data/Amino_acids/datamatrix.csv|Data/Amino_acids/Laberce_testcompa.xlsx|Data/Amino_acids/samplemetadata.csv|Data/Amino_acids/variablemetadata.csv|Data/Archives/Development.RMD|Data/Archives/Machine_learning.R|Data/Archives/Machine_learning_ui.R|Data/Archives/Shiny_App_Glucids.Rproj|Data/Glucids/02 GC Feuille de calcul v6.3.xlsx|Data/Glucids/datamatrix.csv|Data/Glucids/Glucids_vf.xlsx|Data/Glucids/samples.csv|Data/Glucids/variables.csv|Data/Test_Data/Demo_Glucids_5batch.xlsx|Data/Test_Data/Demo_Glucids_NA.xlsx|Data/Test_Data/Demo_Glucids_nobatch.xlsx|Data/Test_Data/Demo_Glucids_OK.xlsx.xlsx
