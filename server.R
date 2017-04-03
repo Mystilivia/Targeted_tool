@@ -63,7 +63,7 @@ shinyServer(function(input, output, session) {
   dataset_keyed <- reactive({
     data <- req(dataset())
     status <- req(dataset_checker())
-    if (all(as.data.table(do.call(rbind,status))[,status] == 'success')) {
+    if (!any(as.data.table(do.call(rbind,status))[,status] == 'danger')) {
       setnames(data[[1]], 1, 'SampleID')
       setnames(data[[2]], 1, 'SampleID')
       setnames(data[[3]], 1, 'VarID')
@@ -102,18 +102,21 @@ shinyServer(function(input, output, session) {
   output$dataset_check <- renderUI({
     status <- dataset_checker()
     status <- as.data.table(do.call(rbind, status))
-    if(any(!status[,status] %in% c("success", "primary"))) {
-      return(
-        HTML(
-          c("<font color = 'blue'> Warnings :", paste0(c("<br/>", status[status == "warning", message]), collapse = "<br/>")),
-          c("<br/> <font color = 'red'> Danger :", paste0(c("<br/>", status[status == "danger", message]), collapse = "<br/>"))
-        )
-      )
+    shinyjs::enable('submit_data_calc')
+    if (any(!status[,status] %in% c("success", "primary"))) {
+      if (any(status[,status] %in% c("warning"))) {
+        temp1 <- c("<font color = 'blue'> Notes : <br/>", paste0(c(status[status == "warning", message]), collapse = "<br/>"))
+        temp <- dataset_keyed()
+      } else {temp1 <- ""}
+      if (any(status[,status] %in% c("danger"))) {
+        temp2 <- c("<br/> <font color = 'red'> Attention : <br/>", paste0(c(status[status == "danger", message]), collapse = "<br/>"))
+        shinyjs::disable('submit_data_calc')
+      } else {temp2 <- ""}
+      return(HTML(c(temp1, temp2)))
     } else {
       temp <- dataset_keyed()
-      shinyjs::enable('submit_data_calc')
       return(HTML("<font color = 'green'> Tout semble ok !"))
-              }
+    }
   })
   ########### CALCULATION TAB ###########
   #### Plot SI in raw datas with error bar by batch and sample class
